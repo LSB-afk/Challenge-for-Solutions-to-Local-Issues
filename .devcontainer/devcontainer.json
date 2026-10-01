@@ -1,0 +1,18 @@
+{
+  "name": "운산 연결지도",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:24",
+  "forwardPorts": [4173],
+  "portsAttributes": {
+    "4173": {
+      "label": "운산 연결지도",
+      "onAutoForward": "notify"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "github.vscode-github-actions"
+      ]
+    }
+  }
+}

@@ -6,7 +6,7 @@ const collection=features=>({type:'FeatureCollection',features});
 const line=(coordinates,properties={})=>({type:'Feature',properties,geometry:{type:'LineString',coordinates}});
 const icon=name=>`<svg class="icon" aria-hidden="true"><use href="#i-${name}"/></svg>`;
 export class AccessMap {
-  constructor({onSelect,onShelter}){this.onSelect=onSelect;this.onShelter=onShelter;this.markers=[];this.incidentMarkers=[];this.layers={flood:true,roads:true,shelters:true,buildings:true};this.ready=false;this.fallback=false;this.selected='a';this.view='3d';}
+  constructor({onSelect,onShelter}){this.onSelect=onSelect;this.onShelter=onShelter;this.markers=[];this.incidentMarkers=[];this.layers={flood:true,roads:true,shelters:true,buildings:true,reports:true};this.ready=false;this.fallback=false;this.selected='a';this.view='3d';}
   async init(state){
     this.state=state;
     try {
@@ -83,7 +83,7 @@ export class AccessMap {
   }
   addMarkers(){
     for(const village of VILLAGES){
-      const el=document.createElement('button');el.className='village-marker';el.setAttribute('aria-label',`${village.name} 시연 마을 선택`);el.innerHTML=`<span class="marker-core">${village.code}</span><span class="marker-name">${village.name} · 시연</span>`;
+      const el=document.createElement('button');el.className='village-marker';el.setAttribute('aria-label',`${village.name} 시연 마을 선택`);el.innerHTML=`<span class="marker-core">${village.code}</span><span class="marker-name">${village.name} · 시연</span><span class="report-badge" hidden></span>`;
       el.addEventListener('click',()=>this.onSelect(village.id));
       const marker=new maplibregl.Marker({element:el,anchor:'center',opacityWhenCovered:1}).setLngLat(NODES[village.id]).addTo(this.map);
       this.markers.push({id:village.id,kind:'village',marker,el});
@@ -105,12 +105,16 @@ export class AccessMap {
     this.map.getSource('selected-route').setData(collection(route));
     for(const item of this.markers){
       item.el.classList.remove('connected','unknown','blocked','open','closed','selected');
-      if(item.kind==='village'){const status=analyzeVillage(item.id,state).status;item.el.classList.add(status);item.el.classList.toggle('selected',item.id===selected);item.el.setAttribute('aria-pressed',String(item.id===selected));}
+      if(item.kind==='village'){const status=analyzeVillage(item.id,state).status;item.el.classList.add(status);item.el.classList.toggle('selected',item.id===selected);item.el.setAttribute('aria-pressed',String(item.id===selected));
+        const count=(state.logs??[]).filter(log=>log.village===item.id&&log.status==='미확인').length,badge=item.el.querySelector('.report-badge');
+        badge.textContent=String(count);badge.hidden=!count||!this.layers.reports;
+        item.el.setAttribute('aria-label',`${VILLAGES.find(v=>v.id===item.id).name} 시연 마을 선택${count?`, 미확인 신고 ${count}건`:''}`);
+      }
       else {item.el.classList.add(state.shelters[item.id]);item.el.hidden=!this.layers.shelters;}
     }
     this.incidentMarkers.forEach(m=>m.remove());this.incidentMarkers=[];
     for(const road of ROADS.filter(r=>state.roads[r.id]==='closed')){
-      const el=document.createElement('div');el.className='blocked-marker';el.innerHTML=`${icon('close')}<span>통제 · 시연</span>`;
+      const el=document.createElement('div');el.className='blocked-marker';el.setAttribute('role','img');el.setAttribute('aria-label',`${road.name} 통제 · 시연`);el.innerHTML=`${icon('close')}<span>통제 · 시연</span>`;
       const p=road.coordinates[Math.floor(road.coordinates.length/2)];
       const marker=new maplibregl.Marker({element:el,opacityWhenCovered:1}).setLngLat(p).addTo(this.map);el.hidden=!this.layers.roads;this.incidentMarkers.push(marker);
     }
@@ -133,6 +137,7 @@ export class AccessMap {
     for(const id of ids)if(id&&this.map.getLayer(id))this.map.setLayoutProperty(id,'visibility',enabled?'visible':'none');
     if(key==='shelters')this.markers.filter(x=>x.kind==='shelter').forEach(x=>x.el.hidden=!enabled);
     if(key==='roads')this.incidentMarkers.forEach(x=>x.getElement().hidden=!enabled);
+    if(key==='reports')this.markers.filter(x=>x.kind==='village').forEach(x=>{const badge=x.el.querySelector('.report-badge');badge.hidden=!enabled||Number(badge.textContent)===0;});
   }
   showFallback(message){
     clearTimeout(this.loadTimer);this.fallback=true;this.ready=false;this.map?.remove();this.map=null;
@@ -146,7 +151,7 @@ export class AccessMap {
     const project=([x,y])=>[80+(x-126.59)/.057*750,100+(36.805-y)/.065*510];
     const results=analyzeAll(this.state),route=analyzeVillage(this.selected,this.state);
     const roads=this.layers.roads?ROADS.map(r=>{const p=r.coordinates.map(project).map(x=>x.join(',')).join(' '),status=this.state.roads[r.id];return `<polyline points="${p}" fill="none" stroke="${route.route?.edges.includes(r.id)?COLORS[route.status]:COLORS[status]??'#a4bec1'}" stroke-width="${route.route?.edges.includes(r.id)?5:3}" ${status==='unknown'?'stroke-dasharray="6 6"':''}/>`;}).join(''):'';
-    const villages=VILLAGES.map(v=>{const [x,y]=project(NODES[v.id]),status=results.find(r=>r.id===v.id).status;return `<g class="diagram-village" data-village="${v.id}" role="button" tabindex="0" aria-label="${v.name} 시연 마을 선택" transform="translate(${x},${y})"><circle r="18" fill="#163440" stroke="${COLORS[status]}" stroke-width="${v.id===this.selected?4:2}"/><text text-anchor="middle" y="4">${v.code}</text><text text-anchor="middle" y="38">${v.name} · 시연</text></g>`;}).join('');
+    const villages=VILLAGES.map(v=>{const [x,y]=project(NODES[v.id]),status=results.find(r=>r.id===v.id).status,pending=this.layers.reports?(this.state.logs??[]).filter(log=>log.village===v.id&&log.status==='미확인').length:0;return `<g class="diagram-village" data-village="${v.id}" role="button" tabindex="0" aria-label="${v.name} 시연 마을 선택" transform="translate(${x},${y})"><circle r="18" fill="#163440" stroke="${COLORS[status]}" stroke-width="${v.id===this.selected?4:2}"/><text text-anchor="middle" y="4">${v.code}</text><text text-anchor="middle" y="38">${v.name} · 시연</text>${pending?`<text class="diagram-report" text-anchor="middle" y="55">미확인 신고 ${pending}건</text>`:''}</g>`;}).join('');
     const shelters=this.layers.shelters?SHELTERS.map(s=>{const [x,y]=project(NODES[s.id]);return `<g transform="translate(${x},${y})"><rect x="-12" y="-12" width="24" height="24" rx="4" fill="#36565b" stroke="#b1c7c9"/><text text-anchor="middle" y="4">⌂</text><text text-anchor="middle" y="30">${s.name} · 시연</text></g>`;}).join(''):'';
     document.querySelector('#map-fallback').innerHTML=`<svg class="fallback-map" viewBox="0 0 960 660" role="img" aria-label="가상 도로망 연결 도식"><defs><pattern id="grid" width="45" height="45" patternUnits="userSpaceOnUse"><path d="M45 0H0V45" fill="none" stroke="#486069" stroke-width=".5"/></pattern></defs><rect width="960" height="660" fill="url(#grid)"/>${roads}${shelters}${villages}<text x="40" y="630">시연 도식 · 실제 도로 및 시설 위치가 아닙니다</text></svg>`;
     document.querySelectorAll('.diagram-village').forEach(el=>{el.addEventListener('click',()=>this.onSelect(el.dataset.village));el.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();this.onSelect(el.dataset.village);}});});

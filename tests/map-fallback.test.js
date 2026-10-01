@@ -40,3 +40,19 @@ test('레이어 구성 실패도 반쯤 준비된 지도 대신 도식으로 전
   assert.match(element('#map-error').textContent,/지도 구성에 실패/);
  });
 });
+
+test('도식의 신고는 관련 마을에 합산되고 숨김·확인 완료를 반영한다',async()=>{
+ await withBrowserStub(async element=>{
+  const map=new AccessMap({onSelect(){},onShelter(){}});
+  const state={...scenarioState(1),logs:[{village:'c',status:'미확인'},{village:'',status:'미확인'},{village:'c',status:'확인 완료'}]};
+  await map.init(state);
+  assert.match(element('#map-fallback').innerHTML,/미확인 신고 1건/);
+  assert.doesNotMatch(element('#map-fallback').innerHTML,/미확인 신고 2건/);
+  map.setLayer('reports',false);
+  assert.doesNotMatch(element('#map-fallback').innerHTML,/미확인 신고/);
+  map.setLayer('reports',true);
+  state.logs[0].status='확인 완료';
+  map.update(state);
+  assert.doesNotMatch(element('#map-fallback').innerHTML,/미확인 신고/);
+ });
+});
