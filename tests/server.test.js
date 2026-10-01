@@ -54,12 +54,22 @@ function waitForDevServer(child){
 
 async function stopChild(child){
  if(child.exitCode!==null)return;
- child.kill('SIGTERM');
+ if(process.platform==='win32')child.kill('SIGTERM');
+ else{
+  try{process.kill(-child.pid,'SIGTERM');}
+  catch(error){if(error.code!=='ESRCH')throw error;}
+ }
  await Promise.race([
   once(child,'exit'),
   new Promise(resolve=>setTimeout(resolve,1500))
  ]);
- if(child.exitCode===null)child.kill('SIGKILL');
+ if(child.exitCode===null){
+  if(process.platform==='win32')child.kill('SIGKILL');
+  else{
+   try{process.kill(-child.pid,'SIGKILL');}
+   catch(error){if(error.code!=='ESRCH')throw error;}
+  }
+ }
 }
 
 function rawStatus(base,requestPath){
@@ -119,11 +129,12 @@ test('정적 서버는 잘못된 인코딩과 경로 이탈 시도를 차단한�
  });
 });
 
-test('npm run dev는 한글과 공백이 있는 현재 경로에서도 서버를 띄운다',async()=>{
- const child=spawn('npm',['run','dev'],{
+test('서버 CLI는 한글과 공백이 있는 현재 경로에서도 기동한다',async()=>{
+ const child=spawn(process.execPath,['server.mjs'],{
   cwd:process.cwd(),
   env:{...process.env,HOST:'127.0.0.1',PORT:'0'},
-  stdio:['ignore','pipe','pipe']
+  stdio:['ignore','pipe','pipe'],
+  detached:process.platform!=='win32'
  });
  try{
   const base=await waitForDevServer(child);
