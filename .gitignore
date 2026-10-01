@@ -1,0 +1,7 @@
+.DS_Store
+node_modules/
+.sites-runtime/
+artifacts/
+*.tgz
+*.tar.gz
+__pycache__/
