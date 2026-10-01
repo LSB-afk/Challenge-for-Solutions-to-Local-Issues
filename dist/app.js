@@ -124,9 +124,11 @@ document.addEventListener('change',event=>{
 });
 for(const view of ['2d','3d'])$('#view-'+view).addEventListener('click',()=>{map.setView(view);['2d','3d'].forEach(v=>{$('#view-'+v).classList.toggle('active',v===view);$('#view-'+v).setAttribute('aria-pressed',String(v===view));});});
 $('#map-zoom-in').addEventListener('click',()=>map.zoom(1));$('#map-zoom-out').addEventListener('click',()=>map.zoom(-1));$('#map-north').addEventListener('click',()=>map.north());$('#map-reset').addEventListener('click',()=>map.reset());
+$('#building-retry').addEventListener('click',()=>map.loadBuildings());
+$('#building-focus').addEventListener('click',()=>{map.setLayer('buildings',true);$('[data-layer="buildings"]').checked=true;map.focusBuildings();$('#layer-panel').hidden=true;$('#layer-button').setAttribute('aria-expanded','false');});
 $('#layer-button').addEventListener('click',()=>{const panel=$('#layer-panel');panel.hidden=!panel.hidden;$('#layer-button').setAttribute('aria-expanded',String(!panel.hidden));});
 document.querySelectorAll('[data-layer]').forEach(el=>el.addEventListener('change',()=>{map.setLayer(el.dataset.layer,el.checked);document.querySelectorAll('[data-preset]').forEach(button=>{button.classList.remove('active');button.setAttribute('aria-pressed','false');});}));
-const layerPresets={field:{flood:false,roads:true,shelters:true,buildings:false,reports:true},connection:{flood:true,roads:true,shelters:true,buildings:true,reports:true},terrain:{flood:false,roads:false,shelters:false,buildings:true,reports:false}};
+const layerPresets={field:{flood:false,roads:true,shelters:true,buildings:true,reports:true},connection:{flood:true,roads:true,shelters:true,buildings:true,reports:true},terrain:{flood:false,roads:false,shelters:false,buildings:true,reports:false}};
 document.querySelectorAll('[data-preset]').forEach(button=>button.addEventListener('click',()=>{
  for(const [key,enabled] of Object.entries(layerPresets[button.dataset.preset])){map.setLayer(key,enabled);$(`[data-layer="${key}"]`).checked=enabled;}
  document.querySelectorAll('[data-preset]').forEach(el=>{el.classList.toggle('active',el===button);el.setAttribute('aria-pressed',String(el===button));});

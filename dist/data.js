@@ -1,4 +1,4 @@
-// Only the background location is geographic context. All operational features below are fictional.
+// Background and the separate building dataset provide geographic context. Operational features below are fictional.
 export const CENTER = [126.6203, 36.7691];
 export const NODES = {
   a:[126.628,36.764], b:[126.63,36.752], c:[126.622,36.786], d:[126.605,36.783],
@@ -39,6 +39,7 @@ export const FLOOD_POLYGONS = [
  [[126.613,36.779],[126.618,36.779],[126.623,36.783],[126.626,36.787],[126.623,36.789],[126.618,36.785],[126.613,36.783],[126.613,36.779]]
 ];
 export const SOURCES = [
+ {title:'운산면 전체 주소 기반 건물',status:'2026.07 기준 · 원본 전체 조회',text:'행정안전부 주소기반산업지원서비스 원자료를 Esri Korea 공개 서비스에서 불러옵니다. 운산면 건물 목록과 도형의 ID를 대조한 뒤 전체 윤곽을 표시합니다. 원본 갱신 시차와 미등록 건물은 반영되지 않을 수 있습니다. 층수는 제공하지만 실제 높이는 없어 윤곽으로 표시합니다.',url:'https://www.arcgis.com/home/item.html?id=b2c7a37bac8d4e40a85435b3f3d96d05'},
  {title:'배경지도',status:'공개 공간자료',text:'OpenFreeMap / OpenStreetMap. 지도 표시는 실제 지리적 배경이며, 도로망 분석은 별도의 가상 데이터입니다.',url:'https://openfreemap.org/'},
  {title:'3D 지형',status:'공개 고도자료',text:'Mapterhorn 고도 타일. 지형 개관용으로, 교량 상판 높이나 침수 수심을 검증한 자료가 아닙니다.',url:'https://mapterhorn.com/'},
  {title:'마을·도로·대피시설',status:'시연용 가상 데이터',text:'시설 위치·이름·운영상태, 도로 선형·통제, 영향 범위를 시연 목적으로 구성했습니다. 공식 시설이나 현재 재난정보가 아닙니다.'},

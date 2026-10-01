@@ -2,10 +2,10 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="theme-color" content="#101f2d">
+  <meta name="theme-color" content="#ffffff">
   <meta name="description" content="운산면 원평소하천 주변 마을의 도로 연결과 대피시설 접근성을 확인하는 시연용 지도.">
   <title>운산 연결지도 — 호우 상황 확인</title>
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='10' fill='%23101f2d'/%3E%3Cpath d='M9 10v13a7 7 0 0 0 14 0V10m-8 20V17a7 7 0 0 1 14 0v13' fill='none' stroke='%2364d6ce' stroke-width='3'/%3E%3C/svg%3E">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='10' fill='%23ffffff'/%3E%3Cpath d='M9 10v13a7 7 0 0 0 14 0V10m-8 20V17a7 7 0 0 1 14 0v13' fill='none' stroke='%23087f80' stroke-width='3'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="./vendor/maplibre-gl.css"><link rel="stylesheet" href="./styles.css">
   <script src="./vendor/maplibre-gl.js" defer></script><script type="module" src="./app.js"></script>
 </head>
@@ -34,7 +34,7 @@
   <div class="location-label"><svg class="icon"><use href="#i-pin"/></svg><span>충청남도 서산시 <strong>운산면</strong></span></div>
   <div class="header-actions"><span class="prototype-tag">프로토타입</span><button class="button secondary" id="export" aria-label="인계표 내려받기"><svg class="icon"><use href="#i-download"/></svg><span>인계표 내려받기</span></button><div class="profile" title="가상 비상근무 담당자">김</div></div>
 </header>
-<div class="demo-banner"><span class="demo-dot"></span><strong>가상 훈련 모드</strong><span>배경지도 외 도로·시설·통제 정보는 시연용입니다.</span><button id="data-note">데이터 안내 <span aria-hidden="true">↗</span></button></div>
+<div class="demo-banner"><span class="demo-dot"></span><strong>가상 훈련 모드</strong><span>건물·지형은 공개자료, 도로·시설·통제는 시연용입니다.</span><button id="data-note">데이터 안내 <span aria-hidden="true">↗</span></button></div>
 <div class="mobile-switch" role="group" aria-label="모바일 화면"><button data-mobile="list" class="active">상황 목록</button><button data-mobile="map">지도 보기</button></div>
 <main class="workspace" id="workspace">
   <nav class="rail" aria-label="주 메뉴">
@@ -51,7 +51,7 @@
     <div class="map-heading"><span class="map-eyebrow"><span class="status-dot"></span>원평소하천 주변</span><h1>마을 사이의 연결을 살펴보세요.</h1><span id="map-engine-status">3D 배경지도 불러오는 중</span></div>
     <div class="map-top-controls"><div class="segmented" role="group" aria-label="지도 시점"><button id="view-2d" aria-pressed="false">2D</button><button id="view-3d" class="active" aria-pressed="true">3D</button></div><button class="square-button" id="layer-button" aria-label="지도 레이어" aria-expanded="false"><svg class="icon"><use href="#i-layers"/></svg></button></div>
     <button class="map-context" id="map-context" data-open-tab="log" aria-label="훈련 시각과 미확인 신고 보기"></button>
-    <div class="layer-panel" id="layer-panel" hidden><strong>업무에 맞는 지도</strong><div class="layer-presets" role="group" aria-label="지도 표시 구성"><button data-preset="field" aria-pressed="false">현장 확인</button><button data-preset="connection" class="active" aria-pressed="true">연결 분석</button><button data-preset="terrain" aria-pressed="false">지형 개관</button></div><label><input type="checkbox" data-layer="flood" checked> 가상 영향 범위</label><label><input type="checkbox" data-layer="roads" checked> 시연 도로망 <span>10개</span></label><label><input type="checkbox" data-layer="shelters" checked> 시연 대피시설 <span>3곳</span></label><label><input type="checkbox" data-layer="reports" checked> 미확인 신고 배지</label><label><input type="checkbox" data-layer="buildings" checked> 지도 건물</label><small>신고는 관련 마을에 묶어 표시합니다. 영향 범위는 침수 예측 결과가 아닙니다.</small></div>
+    <div class="layer-panel" id="layer-panel" hidden><strong>업무에 맞는 지도</strong><div class="layer-presets" role="group" aria-label="지도 표시 구성"><button data-preset="field" aria-pressed="false">현장 확인</button><button data-preset="connection" class="active" aria-pressed="true">연결 분석</button><button data-preset="terrain" aria-pressed="false">지형 개관</button></div><label><input type="checkbox" data-layer="flood" checked> 가상 영향 범위</label><label><input type="checkbox" data-layer="roads" checked> 시연 도로망 <span>10개</span></label><label><input type="checkbox" data-layer="shelters" checked> 시연 대피시설 <span>3곳</span></label><label><input type="checkbox" data-layer="reports" checked> 미확인 신고 배지</label><label><input type="checkbox" data-layer="buildings" checked> 주소 기반 건물 윤곽</label><div class="building-coverage-note"><strong id="building-status" role="status">건물 자료 불러오는 중</strong><p id="building-note">운산면 전체 등록 건물 · 행정안전부 자료 / 2026.07 기준</p><button id="building-focus" class="button secondary full" disabled>선택 마을 주변 건물 확대</button><button id="building-retry" class="button secondary full" hidden>건물 자료 다시 불러오기</button><a href="https://www.arcgis.com/home/item.html?id=b2c7a37bac8d4e40a85435b3f3d96d05" target="_blank" rel="noopener noreferrer">건물 자료 출처·이용 조건 ↗</a></div><small>신고는 관련 마을에 묶어 표시합니다. 영향 범위는 침수 예측 결과가 아닙니다.</small></div>
     <div class="map-navigation"><button class="square-button compass" id="map-north" aria-label="지도를 북쪽으로 정렬"><span>↑</span><small>N</small></button><button class="square-button" id="map-zoom-in" aria-label="지도 확대">+</button><button class="square-button" id="map-zoom-out" aria-label="지도 축소">−</button><button class="square-button" id="map-reset" aria-label="지도 전체 보기"><svg class="icon"><use href="#i-map"/></svg></button></div>
     <div class="map-legend"><span><i class="legend-line teal"></i>연결 경로</span><span><i class="legend-line orange"></i>통제</span><span><i class="legend-line yellow"></i>미확인</span><small>선형·시설 위치는 시연용</small></div>
     <article id="detail-panel" class="detail-panel" aria-label="선택 마을 상세"></article>

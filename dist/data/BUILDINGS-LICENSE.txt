@@ -1,0 +1,70 @@
+Unsan building footprint layer source and usage
+===============================================
+
+This prototype uses Korea Building Footprints v2 from Esri Korea Living Atlas
+as an online feature layer. It does not bundle an offline building-footprint
+export in this directory.
+
+Source
+------
+
+Item title: 전국 건물 도형 v2 / Korea Building Footprints v2
+ArcGIS item: https://www.arcgis.com/home/item.html?id=b2c7a37bac8d4e40a85435b3f3d96d05
+Feature layer: https://portal.esrikr.com/arcgis/rest/services/MOIS_KR_Buildings_v2/FeatureServer/0
+Raw data source: Korean Ministry of Interior and Safety, 주소기반산업지원서비스
+Raw source link: https://business.juso.go.kr/jst/jstAddressCuration
+Release version: 2026.1
+Data reference date: 2026.07
+Service updated: 2026.08
+Spatial reference: KGD2002 Unified Coordinate System / EPSG:5179
+
+Metadata checked on 2026-10-01 at the item and layer URLs above.
+
+Use in this prototype
+---------------------
+
+The app queries the online FeatureServer from the browser. The flow is:
+
+1. Query all object IDs for Unsan-myeon (sig_cd 44210, emd_cd 380).
+2. Fetch features in chunks by returned IDs.
+3. Verify every returned object ID and polygon geometry before drawing.
+4. Keep the returned features in browser memory for visualization only.
+5. Do not write or redistribute an offline building export.
+
+Known count checks
+------------------
+
+- Full Unsan-myeon filter: sig_cd='44210' AND emd_cd='380' => 4,970 records.
+- Original prototype bbox against this source => 872 records.
+- Previous Overture extract for the same bbox => 4 records, so Overture is no
+  longer used as the building source for this prototype.
+
+Usage terms from the item metadata
+----------------------------------
+
+The item metadata states that rights are reserved by the Korean Ministry of
+Interior and Safety. It also states that the layer is intended to support online
+visualization and analysis, and that users are not permitted to export data for
+offline use outside of Korea.
+
+This note applies that restriction narrowly and directly: the prototype uses
+online visualization and analysis, and it does not create an offline export for
+redistribution or use outside Korea. This note does not add broader restrictions
+beyond the source item's stated terms, and it does not grant rights beyond those
+terms.
+
+Display limitations
+-------------------
+
+The source layer supplies polygon footprints and attributes such as building
+name, road name, lot number, building type code, and ground-floor count. It does
+not supply actual building heights. Ground-floor count is shown only as a source
+attribute. Footprints are rendered flat over the 3D terrain.
+
+Completeness limitations
+------------------------
+
+The app can verify that it received all records returned by the source query, but
+that does not prove that every real building in the field is present or current
+in the source. New construction, demolition, address-data lag, or source omissions
+may remain.

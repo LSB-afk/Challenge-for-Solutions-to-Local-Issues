@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/LSB-afk/Challenge-for-Solutions-to-Local-Issues/actions/workflows/ci.yml/badge.svg)](https://github.com/LSB-afk/Challenge-for-Solutions-to-Local-Issues/actions/workflows/ci.yml)
 
-현재 앱은 공모전 제출용 데모입니다. 배경지도와 지형 타일을 제외한 마을 구획, 도로 선형, 시설 위치, 통제 상태, 영향 범위는 모두 시연 데이터입니다.
+현재 앱은 공모전 제출용 데모입니다. 배경지도·지형·공개 건물 윤곽을 제외한 마을 구획, 도로 선형, 시설 위치, 통제 상태, 영향 범위는 모두 시연 데이터입니다.
 
 ## 빠른 실행
 
@@ -23,8 +23,8 @@ npm run check
 npm test
 ```
 
-- `npm run check`: `dist/data.js`, `dist/engine.js`, `dist/map.js`, `dist/operations.js`, `dist/app.js`, `server.mjs` 구문 검사.
-- `npm test`: 연결 판정, CSV 내보내기, 지도 실패 대체 화면, 정적 서버와 `npm run dev` 기동 검증.
+- `npm run check`: `dist/data.js`, `dist/engine.js`, `dist/buildings.js`, `dist/map.js`, `dist/operations.js`, `dist/app.js`, `server.mjs` 구문 검사.
+- `npm test`: 연결 판정, 전체 건물 조회·누락 검증, CSV 내보내기, 지도 실패 대체 화면, 정적 서버와 개발 서버 기동 검증.
 
 ## 3분 시연 순서
 
@@ -36,6 +36,14 @@ npm test
 6. **현장 신고 기록**: 내용을 정리하고 미확인 상태로 저장합니다. 신고는 도로 상태를 자동 변경하지 않습니다. 지도 배지와 대응 브리핑에서 확인 대기를 볼 수 있습니다.
 7. **인계표 내려받기**: CSV 내용을 확인하고 파일로 저장하거나 복사합니다.
 8. **시연 초기화**: 현재 브라우저에 저장된 시연 기록과 변경 상태를 초기화합니다.
+
+## 건물 자료
+
+흰 배경 지도에 행정안전부 주소기반산업지원서비스 기반의 Esri Korea Living Atlas `전국 건물 도형 v2 / Korea Building Footprints v2`를 온라인으로 조회해 표시합니다. 브라우저가 운산면 전체 건물 ID를 먼저 가져온 뒤 1,000개씩 도형을 받아 검증하고 지도에 그립니다. 원본 건물 도형 파일을 저장소나 배포 파일에 포함하지 않습니다.
+
+확인된 건수는 운산면 전체 필터 `sig_cd='44210' AND emd_cd='380'` 기준 4,970건, 기존 프로토타입 bbox 기준 872건입니다. 기존 Overture 추출은 같은 bbox에서 4건에 그쳐 더 이상 건물 기준 자료로 쓰지 않습니다. 원천 레이어는 데이터 기준일 2026.07, 서비스 업데이트 2026.08입니다.
+
+건물은 3D 지형 위에 평면 footprint로 표시합니다. 원천에 실제 높이 값이 없으므로 `gro_flo_co` 지상층수는 속성으로만 보여 주고, 층수로 높이를 추정하지 않습니다. 원천 query가 반환한 record를 모두 받을 수는 있어도 현실 세계의 모든 건물이 포함되었다고 보증할 수는 없습니다. [자료 출처와 사용 원칙](docs/building-data.md), [출처·이용조건](dist/data/BUILDINGS-LICENSE.txt)을 확인하세요.
 
 ## 구현 범위
 
@@ -74,7 +82,7 @@ npm test
 
 신고 정리는 규칙 기반 키워드 추출입니다. 외부 AI, 실시간 센서, 재난문자, 기관 시스템은 연결하지 않았습니다. 홍수 예측, 수심 추정, 경로 안전 판정, 자동 대피명령은 구현 범위에 없습니다. 기록은 해당 브라우저에만 저장됩니다.
 
-배경지도·지형·폰트 타일은 인터넷 연결이 필요합니다. 지도 모듈 또는 배경 연결이 실패하면 가상 연결 도식으로 전환됩니다. 파일 다운로드 지원은 브라우저마다 달라 인계표 복사를 함께 제공합니다.
+배경지도·지형·건물·폰트 자료는 인터넷 연결이 필요합니다. 지도 모듈 또는 배경 연결이 실패하면 가상 연결 도식으로 전환됩니다. 파일 다운로드 지원은 브라우저마다 달라 인계표 복사를 함께 제공합니다.
 
 ## 출처
 
