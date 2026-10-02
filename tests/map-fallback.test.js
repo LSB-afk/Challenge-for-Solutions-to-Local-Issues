@@ -56,3 +56,21 @@ test('도식의 신고는 관련 마을에 합산되고 숨김·확인 완료를
   assert.doesNotMatch(element('#map-fallback').innerHTML,/미확인 신고/);
  });
 });
+
+test('출처 필터는 도식에도 적용하고 도로 상태와 레이어 선택을 보존한다',async()=>{
+ await withBrowserStub(async element=>{
+  const map=new AccessMap({onSelect(){},onShelter(){}});
+  const state={...scenarioState(1),logs:[{village:'c',status:'미확인'}]},before=structuredClone(state);
+  await map.init(state);
+  map.setSourceMode('reports');
+  assert.doesNotMatch(element('#map-fallback').innerHTML,/<polyline/);
+  assert.match(element('#map-fallback').innerHTML,/미확인 신고 1건/);
+  assert.equal(map.layers.roads,true);
+  map.setSourceMode('evidence');
+  assert.match(element('#map-fallback').innerHTML,/<polyline/);
+  assert.doesNotMatch(element('#map-fallback').innerHTML,/미확인 신고 1건/);
+  map.setLayer('roads',false);map.setSourceMode('all');
+  assert.doesNotMatch(element('#map-fallback').innerHTML,/<polyline/);
+  assert.deepEqual(state,before);
+ });
+});

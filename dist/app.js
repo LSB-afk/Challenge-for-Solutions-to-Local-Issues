@@ -1,6 +1,7 @@
 import {VILLAGES,SHELTERS,ROADS,SCENARIOS,SOURCES} from './data.js';
 import {scenarioState,analyzeAll,analyzeVillage,extractReport,exportCsv,csvCell} from './engine.js';
 import {scenarioMinute,getOperationalContext,getVillageEvidence,confirmEvidence} from './operations.js';
+import {getSituationSummary,searchPlaces,SOURCE_MODES} from './situation.js';
 import {AccessMap} from './map.js';
 
 const $=s=>document.querySelector(s);
@@ -26,8 +27,8 @@ function restore(){
 }
 const initial=restore();
 let state=initial??{...scenarioState(1),logs:[]};
-let selected='a',tab='overview',query='',detailMode='route',toastTimer;
-const map=new AccessMap({onSelect:id=>selectVillage(id,false),onShelter:id=>{switchTab('shelters');const el=$(`[data-facility-card="${id}"]`);el?.scrollIntoView({behavior:'smooth',block:'nearest'});}});
+let selected='a',tab='overview',query='',detailMode='route',selectedRoad=null,evidenceFilter='attention',toastTimer;
+const map=new AccessMap({onSelect:id=>selectVillage(id,false),onRoad:id=>selectRoad(id,false),onShelter:id=>selectShelter(id,false)});
 function persist(){try{localStorage.setItem(STORAGE_KEY,JSON.stringify(state));storageAvailable=true;}catch{storageAvailable=false;toast('저장 공간에 접근할 수 없어 이번 화면에서만 기록을 유지합니다.');}}
 function toast(message){clearTimeout(toastTimer);$('#toast').textContent=message;$('#toast').hidden=false;toastTimer=setTimeout(()=>$('#toast').hidden=true,4500);}
 function stamp(){return new Date().toLocaleString('ko-KR',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false});}
@@ -55,6 +56,8 @@ function renderSidebar(){
     `<div class="summary-strip"><div class="summary-item blocked"><strong>${counts.blocked}</strong><span>연결 확인 불가</span></div><div class="summary-item unknown"><strong>${counts.unknown}</strong><span>추가 확인</span></div><div class="summary-item connected"><strong>${counts.connected}</strong><span>연결 경로 있음</span></div></div>`+renderBriefing(context)+`<div class="list-tools"><div class="search-box">${icon('search')}<input id="village-search" type="search" aria-label="마을 검색" placeholder="마을 이름 또는 A–D 검색" value="${escape(query)}"></div><div class="list-caption"><span>확인할 마을</span><small>확인 우선순</small></div></div><div class="village-list" id="village-list"></div><div class="sidebar-action"><button class="button primary full" data-report>${icon('plus')}현장 신고 기록</button><p>시연용 도로망 기준입니다.<br>마을을 선택해 판단 근거를 확인하세요.</p></div>`;
     renderVillageList();
     $('#village-search').addEventListener('input',e=>{query=e.target.value;renderVillageList();});
+  }else if(tab==='incidents'){
+    panel.innerHTML=renderSituationList();
   }else if(tab==='comparison'){
     panel.innerHTML=renderComparison(getOperationalContext(state,state.logs));
   }else if(tab==='shelters'){
@@ -78,22 +81,75 @@ function renderEvidence(evidence){
  return `<div class="evidence-caption">훈련 기준 ${getOperationalContext(state).clock} · 확인 후 30분 초과 시 재확인</div><ol class="evidence-list">${evidence.items.map(item=>`<li><div class="evidence-title"><span>${icon(item.kind==='road'?'route':'home')}${escape(item.name)}</span><small class="${item.status}">${escape(item.label)}</small></div><p>${escape(item.source)}</p><div class="evidence-meta"><span>${item.checkedAt==='미확인'?'확인 시각 없음':`확인 ${item.checkedAt} · ${item.ageMinutes}분 전`}</span><strong class="freshness-${item.freshness}">${{recent:'최근 확인',stale:'재확인 필요',unknown:'판단 보류'}[item.freshness]}</strong></div>${item.status!=='unknown'?`<button class="reconfirm-button" data-reconfirm-id="${item.id}" data-reconfirm-kind="${item.kind}" aria-label="${escape(item.name)} 같은 상태로 재확인">같은 상태로 재확인 ${icon('check')}</button>`:''}</li>`).join('')}</ol><details class="checklist"><summary>현장 확인 체크리스트</summary><ul>${evidence.checklist.map(line=>`<li>${escape(line)}</li>`).join('')}</ul></details><p class="evidence-disclaimer">시각과 출처는 훈련 데이터입니다. 실제 관측 자료의 갱신 시각이 아닙니다.</p>`;
 }
 function renderDetail(){
+ if(selectedRoad){renderRoadDetail();return;}
+ $('#detail-panel').setAttribute('aria-label','선택 마을 상세');
  const village=VILLAGES.find(v=>v.id===selected),result=analyzeVillage(selected,state),shelter=SHELTERS.find(s=>s.id===result.route?.target),evidence=getVillageEvidence(selected,state,state.logs);
  const adjacent=ROADS.filter(r=>r.from===selected||r.to===selected);
  const route=`<div class="route-result ${result.status}"><strong>${result.route?`${shelter.name} 연결 ${result.status==='unknown'?'후보':'경로'}`:'개방 시설 연결 확인 불가'}</strong><small>${result.route?`시연 선형 기준 ${(result.route.distance/1000).toFixed(1)} km · ${result.route.edges.length}개 구간`:'도로·시설 상태를 추가로 확인하세요.'}</small></div><p>${result.reason}</p><details class="road-controls"><summary>관련 도로 ${adjacent.length}개 · 상태 바꾸기</summary>${adjacent.map(r=>`<div class="road-control"><label for="road-${r.id}">${r.name} · 시연</label><select id="road-${r.id}" data-road="${r.id}" aria-label="${r.name} 상태"><option value="open" ${state.roads[r.id]==='open'?'selected':''}>통행 가능 · 시연</option><option value="unknown" ${state.roads[r.id]==='unknown'?'selected':''}>미확인</option><option value="closed" ${state.roads[r.id]==='closed'?'selected':''}>통제 · 시연</option></select></div>`).join('')}</details>`;
  $('#detail-panel').innerHTML=`<div class="detail-head"><div class="detail-topline"><span>${icon('pin')}선택 마을 · ${village.code}</span><button id="expand-detail" aria-expanded="${$('#detail-panel').classList.contains('expanded')}" aria-label="마을 상세 펼치기 또는 접기">상세 ↕</button></div><h2>${village.name}</h2>${statusLabel(result)}</div><div class="detail-tabs" role="group" aria-label="마을 상세 보기"><button data-detail="route" class="${detailMode==='route'?'active':''}" aria-pressed="${detailMode==='route'}">접근 경로</button><button data-detail="evidence" class="${detailMode==='evidence'?'active':''}" aria-pressed="${detailMode==='evidence'}">확인 근거 <span>${evidence.items.length}</span></button></div><div class="detail-body">${detailMode==='evidence'?renderEvidence(evidence):route}<div class="next-action"><small>다음 확인</small><p>${escape(evidence.nextAction)}</p>${evidence.pendingReports?`<button data-open-tab="log">미확인 신고 ${evidence.pendingReports}건 보기 ↗</button>`:''}</div><div class="detail-footer"><button class="button secondary" id="record-check">${icon('check')}검토 기록</button><button class="button primary" data-report>${icon('plus')}신고 추가</button></div><small class="detail-note">시연 시설·도로 기준입니다. 실제 이동 전 현장 확인이 필요합니다.</small></div>`;
 }
-function renderMapContext(){
- const context=getOperationalContext(state,state.logs);
- $('#map-context').innerHTML=`<span>훈련 기준 <strong>${context.clock}</strong></span><span class="context-divider"></span><span>신고 확인 대기 <strong>${context.pendingReportCount}</strong>건</span>${icon('arrow')}`;
+function renderSituationList(){
+ const {evidence}=getSituationSummary(state);
+ const items=evidence.filter(item=>evidenceFilter==='all'||(evidenceFilter==='closed'?item.kind==='road'&&item.status==='closed':evidenceFilter==='unknown'?item.freshness==='unknown':evidenceFilter==='stale'?item.freshness==='stale':item.status!=='open'||item.freshness==='stale'));
+ return header('상황 근거 확인','도로 10개·시설 3곳의 상태와 확인 시각입니다.',`<span class="count">${items.length}건</span>`)+
+ `<div class="evidence-filters" role="group" aria-label="상황 근거 필터">${Object.entries({attention:'확인 필요',all:'전체',closed:'도로 통제',unknown:'미확인',stale:'재확인'}).map(([key,label])=>`<button data-evidence-filter="${key}" aria-pressed="${evidenceFilter===key}" class="${evidenceFilter===key?'active':''}">${label}</button>`).join('')}</div>`+
+ (items.length?items.map(item=>`<button class="situation-card" ${item.kind==='road'?`data-road-inspect="${item.id}"`:`data-shelter-inspect="${item.id}"`}><span class="situation-card-top">${icon(item.kind==='road'?'route':'home')}<strong>${escape(item.name)}</strong>${icon('arrow')}</span><span class="situation-card-status ${item.status}">${item.label}</span><span class="situation-card-meta">${item.checkedAt==='미확인'?'확인 시각 없음':`훈련 ${item.checkedAt} · ${item.ageMinutes}분 전`}<span class="freshness-${item.freshness}">${{recent:'최근 확인',stale:'재확인 필요',unknown:'판단 보류'}[item.freshness]}</span></span></button>`).join(''):'<p class="empty-state">이 조건에 해당하는 근거가 없습니다.</p>')+
+ `<div class="sidebar-action"><p>시연 상태와 훈련 시각을 표시합니다. 현장 신고는 확인 기록에서 별도로 검토하세요.</p><button class="button secondary full" data-open-tab="log">신고·확인 기록 보기</button></div>`;
 }
+function renderRoadDetail(){
+ const item=getSituationSummary(state).evidence.find(item=>item.kind==='road'&&item.id===selectedRoad);
+ const road=ROADS.find(road=>road.id===selectedRoad);
+ const villages=VILLAGES.filter(v=>[road.from,road.to].includes(v.id));
+ $('#detail-panel').setAttribute('aria-label','선택 도로 상세');
+ $('#detail-panel').innerHTML=`<div class="detail-head"><div class="detail-topline"><span>${icon('route')}선택 도로 · 시연</span><button id="expand-detail" aria-expanded="${$('#detail-panel').classList.contains('expanded')}" aria-label="도로 상세 펼치기 또는 접기">상세 ↕</button></div><h2>${escape(item.name)}</h2><span class="status-label ${item.status==='closed'?'blocked':item.status==='open'?'connected':'unknown'}">${item.label}</span></div><div class="detail-body"><label class="road-status-label" for="selected-road-status">현장 확인 후 시연 상태 변경</label><select id="selected-road-status" data-road="${item.id}">${Object.entries({open:'통행 가능 · 시연',unknown:'미확인',closed:'통제 · 시연'}).map(([key,label])=>`<option value="${key}" ${key===item.status?'selected':''}>${label}</option>`).join('')}</select>${renderEvidence({items:[item],checklist:['통제 위치와 구간 확인','확인 담당자·시각 기록','관련 마을과 시설 연결 재검토']})}<div class="road-villages"><small>연결된 시연 마을</small>${villages.map(v=>`<button data-select-village="${v.id}">${v.code} · ${v.name} ${icon('arrow')}</button>`).join('')||'<p>시설·분기점 연결 구간</p>'}</div></div>`;
+}
+function renderMapContext(){
+ const {counts}=getSituationSummary(state),scenario=SCENARIOS[state.scenario];
+ $('#operation-ribbon').innerHTML=`<div class="ribbon-clock"><span class="training-chip">훈련</span><strong>${scenario.time}</strong><span>${scenario.title}</span></div><div class="ribbon-metrics"><button data-summary-filter="closed"><span class="metric-dot closed"></span>도로 통제 <strong>${counts.closedRoads}</strong><small>구간</small></button><button data-summary-filter="unknown"><span class="metric-dot unknown"></span>미확인 근거 <strong>${counts.unknown}</strong><small>건</small></button><button data-summary-filter="stale">재확인 <strong>${counts.stale}</strong><small>건</small></button><button data-open-tab="log">신고 대기 <strong>${counts.pending}</strong><small>전체 기록</small>${icon('arrow')}</button></div>`;
+ const reports=map.visible('reports'),roads=map.visible('roads'),shelters=map.visible('shelters'),flood=map.visible('flood');
+ const note=map.sourceMode==='reports'?`미확인 ${counts.pending}건 · 위치 미확정 ${counts.unlocated}건은 기록에서 확인`:map.sourceMode==='evidence'?'훈련 상황표·수동 확인 기준 · 신고 배지 숨김':'훈련 근거와 미확인 신고를 함께 표시';
+ $('#source-note').textContent=note+(map.sourceMode==='reports'&&!reports?' · 신고 레이어 꺼짐':'');
+ $('#map-legend').innerHTML=`<strong>지도 읽기</strong>${roads?'<span><i class="legend-line closed"></i>통제</span><span><i class="legend-line unknown"></i>미확인</span>':''}${shelters?'<span><i class="legend-facility"></i>시연 시설</span>':''}${reports?'<span><i class="legend-report">N</i>마을별 신고</span>':''}${flood?'<small>푸른 면: 가상 영향 범위 · 수심 아님</small>':''}<small>${map.sourceMode==='reports'?'마을 위치에 신고를 합산합니다.':'모든 운영 표식은 시연 데이터입니다.'}</small>`;
+ const notice=$('#map-notice');notice.hidden=map.sourceMode!=='reports'||counts.pending>0;
+ notice.textContent='미확인 신고가 없습니다. 새 신고는 현장 신고 기록에서 추가하세요.';
+}
+function setMapFocus(expanded){
+ $('#workspace').classList.toggle('map-focused',expanded);
+ $('#map-focus').setAttribute('aria-pressed',String(expanded));$('#map-focus').textContent=expanded?'목록 함께':'지도 넓게';
+ $('#map-focus').setAttribute('aria-label',expanded?'상황 목록 함께 보기':'지도 넓게 보기');
+ requestAnimationFrame(()=>map.resize());
+}
+function selectRoad(id,move=true){
+ if(!ROADS.some(road=>road.id===id))return;
+ if(map.sourceMode==='reports'){map.setSourceMode('evidence');document.querySelectorAll('[data-source-mode]').forEach(el=>{const active=el.dataset.sourceMode==='evidence';el.classList.toggle('active',active);el.setAttribute('aria-pressed',String(active));});}
+ if(!map.layers.roads){map.setLayer('roads',true);$('[data-layer="roads"]').checked=true;document.querySelectorAll('[data-preset]').forEach(el=>{el.classList.remove('active');el.setAttribute('aria-pressed','false');});}
+ renderMapContext();selectedRoad=id;map.selectRoad(id);renderDetail();$('#detail-panel').scrollTop=0;
+ if(window.innerWidth<=760)setMobile('map');
+ if(move)map.focusRoad(id);
+}
+function selectShelter(id,move=true){
+ if(!SHELTERS.some(shelter=>shelter.id===id))return;
+ selectedRoad=null;map.selectRoad(null);renderDetail();switchTab('shelters');
+ $(`[data-facility-card="${id}"]`)?.scrollIntoView({behavior:'smooth',block:'nearest'});
+ if(move)map.focus(id);
+}
+function closeSearch(){
+ $('#place-results').hidden=true;$('#place-search').setAttribute('aria-expanded','false');
+}
+function renderSearch(){
+ const input=$('#place-search'),results=$('#place-results'),places=searchPlaces(input.value);
+ if(!input.value.trim()){closeSearch();return;}
+ results.hidden=false;input.setAttribute('aria-expanded','true');
+ results.innerHTML=`<p class="search-scope">시연 마을·도로·시설 ${places.length}곳 · 건물 주소 검색 제외</p>`+(places.length?places.map(place=>`<button data-place-kind="${place.kind}" data-place-id="${place.id}"><span class="place-type">${place.type}</span><strong>${escape(place.name)}</strong>${icon('arrow')}</button>`).join(''):'<p class="search-empty">검색 결과가 없습니다.<br>원평리, 교량, 시설 등을 입력하세요.</p>');
+}
+
 function render(){renderSidebar();renderDetail();renderMapContext();map.update(state,selected);document.querySelectorAll('[data-scenario]').forEach(el=>{const active=Number(el.dataset.scenario)===state.scenario;el.classList.toggle('active',active);el.setAttribute('aria-pressed',String(active));});}
-function switchTab(next){tab=next;document.querySelectorAll('[data-tab]').forEach(el=>{el.classList.toggle('active',el.dataset.tab===tab);el.setAttribute('aria-pressed',String(el.dataset.tab===tab));});renderSidebar();$('#sidebar-content').scrollTop=0;if(window.innerWidth<=760)setMobile('list');}
-function selectVillage(id,move=true){if(!VILLAGES.some(v=>v.id===id))return;selected=id;renderDetail();$('#detail-panel').scrollTop=0;if(tab==='overview')renderVillageList();if(tab==='comparison')renderSidebar();map.update(state,selected);if(move)map.focus(id);if(window.innerWidth<=760)setMobile('map');}
-function setMobile(mode){$('#workspace').classList.toggle('show-map',mode==='map');document.querySelectorAll('[data-mobile]').forEach(el=>{el.classList.toggle('active',el.dataset.mobile===mode);el.setAttribute('aria-pressed',String(el.dataset.mobile===mode));});requestAnimationFrame(()=>map.resize());}
+function switchTab(next){setMapFocus(false);tab=next;document.querySelectorAll('[data-tab]').forEach(el=>{el.classList.toggle('active',el.dataset.tab===tab);el.setAttribute('aria-pressed',String(el.dataset.tab===tab));});renderSidebar();$('#sidebar-content').scrollTop=0;if(window.innerWidth<=760)setMobile('list');}
+function selectVillage(id,move=true){if(!VILLAGES.some(v=>v.id===id))return;selected=id;selectedRoad=null;map.selectRoad(null);renderDetail();$('#detail-panel').scrollTop=0;if(tab==='overview')renderVillageList();if(tab==='comparison')renderSidebar();map.update(state,selected);if(move)map.focus(id);if(window.innerWidth<=760)setMobile('map');}
+function setMobile(mode){if(mode==='map')$('#detail-panel').scrollTop=0;$('#workspace').classList.toggle('show-map',mode==='map');document.querySelectorAll('[data-mobile]').forEach(el=>{el.classList.toggle('active',el.dataset.mobile===mode);el.setAttribute('aria-pressed',String(el.dataset.mobile===mode));});requestAnimationFrame(()=>map.resize());}
 function changeScenario(id){if(!Number.isInteger(id)||!SCENARIOS[id])throw Error('유효하지 않은 시나리오입니다.');state={...scenarioState(id),logs:state.logs};persist();render();toast(`${SCENARIOS[id].time} ${SCENARIOS[id].title} 시나리오를 적용했습니다.`);}
 function openReport(){const form=$('#report-form');form.reset();$('#report-village').value=selected;$('#extract-result').hidden=true;$('#report-dialog').showModal();$('#report-text').focus();}
-function changeRoad(id,value){if(!ROADS.some(r=>r.id===id)||!ALLOWED.includes(value))return;state.roads[id]=value;(state.roadChecks??={})[id]=scenarioMinute(state.scenario);const names={open:'통행 가능',closed:'통제',unknown:'미확인'};addLog(`${ROADS.find(r=>r.id===id).name}의 시연 상태를 '${names[value]}'으로 변경했습니다.`,{type:'도로 상태 변경'});render();toast('도로 상태를 반영해 연결을 다시 계산했습니다.');}
+function changeRoad(id,value){if(!ROADS.some(r=>r.id===id)||!ALLOWED.includes(value))return;state.roads[id]=value;(state.roadChecks??={})[id]=scenarioMinute(state.scenario);const names={open:'통행 가능',closed:'통제',unknown:'미확인'};addLog(`${ROADS.find(r=>r.id===id).name}의 시연 상태를 '${names[value]}'으로 변경했습니다.`,{type:'도로 상태 변경',village:VILLAGES.find(v=>[ROADS.find(r=>r.id===id).from,ROADS.find(r=>r.id===id).to].includes(v.id))?.id??''});render();toast('도로 상태를 반영해 연결을 다시 계산했습니다.');}
 function registerTools(){
  const context=document.modelContext;if(!context?.registerTool)return;
  const tools=[
@@ -108,13 +164,19 @@ document.querySelectorAll('[data-scenario]').forEach(el=>el.addEventListener('cl
 document.querySelectorAll('[data-mobile]').forEach(el=>el.addEventListener('click',()=>setMobile(el.dataset.mobile)));
 document.querySelectorAll('[data-close-dialog]').forEach(el=>el.addEventListener('click',()=>el.closest('dialog').close()));
 document.addEventListener('click',event=>{
+ const summary=event.target.closest('[data-summary-filter]');if(summary){evidenceFilter=summary.dataset.summaryFilter;switchTab('incidents');}
+ const filter=event.target.closest('[data-evidence-filter]');if(filter){evidenceFilter=filter.dataset.evidenceFilter;renderSidebar();}
+ const roadButton=event.target.closest('[data-road-inspect]');if(roadButton)selectRoad(roadButton.dataset.roadInspect);
+ const shelterButton=event.target.closest('[data-shelter-inspect]');if(shelterButton)selectShelter(shelterButton.dataset.shelterInspect);
+ const place=event.target.closest('[data-place-id]');if(place){const id=place.dataset.placeId;closeSearch();$('#place-search').value='';if(place.dataset.placeKind==='road')selectRoad(id);else if(place.dataset.placeKind==='shelter')selectShelter(id);else selectVillage(id);$('#place-search').focus();}
+ if(!event.target.closest('.place-search'))closeSearch();
  const report=event.target.closest('[data-report]');if(report)openReport();
  const village=event.target.closest('.village-item,[data-select-village]');if(village)selectVillage(village.dataset.village??village.dataset.selectVillage);
  const reconfirm=event.target.closest('[data-reconfirm-id]');
- if(reconfirm){const kind=reconfirm.dataset.reconfirmKind,id=reconfirm.dataset.reconfirmId;const updated=confirmEvidence(kind,id,state);if(updated!==state){state=updated;const item=(kind==='road'?ROADS:SHELTERS).find(item=>item.id===id);addLog(`${item.name}: 같은 시연 상태로 재확인했습니다. 훈련 확인 시각 ${getOperationalContext(state).clock}`,{type:'근거 재확인'});render();toast('선택한 근거의 훈련 확인 시각을 갱신했습니다.');}}
+ if(reconfirm){const kind=reconfirm.dataset.reconfirmKind,id=reconfirm.dataset.reconfirmId;const updated=confirmEvidence(kind,id,state);if(updated!==state){state=updated;const item=(kind==='road'?ROADS:SHELTERS).find(item=>item.id===id);addLog(`${item.name}: 같은 시연 상태로 재확인했습니다. 훈련 확인 시각 ${getOperationalContext(state).clock}`,{type:'근거 재확인',village:kind==='road'?VILLAGES.find(v=>[item.from,item.to].includes(v.id))?.id??'':''});render();toast('선택한 근거의 훈련 확인 시각을 갱신했습니다.');}}
  const tabButton=event.target.closest('[data-open-tab]');if(tabButton)switchTab(tabButton.dataset.openTab);
  const detailButton=event.target.closest('[data-detail]');if(detailButton){detailMode=detailButton.dataset.detail;renderDetail();}
- if(event.target.closest('#expand-detail')){const expanded=$('#detail-panel').classList.toggle('expanded');$('#expand-detail').setAttribute('aria-expanded',String(expanded));}
+ if(event.target.closest('#expand-detail')){const expanded=$('#detail-panel').classList.toggle('expanded');$('#expand-detail').setAttribute('aria-expanded',String(expanded));$('#detail-panel').scrollTop=0;}
  const log=event.target.closest('[data-confirm-log]');if(log){const entry=state.logs.find(l=>l.id===log.dataset.confirmLog);if(entry){entry.status='확인 완료';entry.text+=' [사용자가 확인 완료로 표시]';persist();render();toast('확인 완료로 기록했습니다. 도로 상태는 별도로 확인해 주세요.');}}
  if(event.target.closest('#record-check')){const result=analyzeVillage(selected,state);addLog(`시연 시나리오에서 '${result.label}' 상태를 검토했습니다. ${result.reason}`);render();toast('검토 기록을 저장했습니다. 개별 근거의 확인 시각은 재확인 버튼으로 갱신하세요.');}
 });
@@ -127,11 +189,11 @@ $('#map-zoom-in').addEventListener('click',()=>map.zoom(1));$('#map-zoom-out').a
 $('#building-retry').addEventListener('click',()=>map.loadBuildings());
 $('#building-focus').addEventListener('click',()=>{map.setLayer('buildings',true);$('[data-layer="buildings"]').checked=true;map.focusBuildings();$('#layer-panel').hidden=true;$('#layer-button').setAttribute('aria-expanded','false');});
 $('#layer-button').addEventListener('click',()=>{const panel=$('#layer-panel');panel.hidden=!panel.hidden;$('#layer-button').setAttribute('aria-expanded',String(!panel.hidden));});
-document.querySelectorAll('[data-layer]').forEach(el=>el.addEventListener('change',()=>{map.setLayer(el.dataset.layer,el.checked);document.querySelectorAll('[data-preset]').forEach(button=>{button.classList.remove('active');button.setAttribute('aria-pressed','false');});}));
+document.querySelectorAll('[data-layer]').forEach(el=>el.addEventListener('change',()=>{map.setLayer(el.dataset.layer,el.checked);document.querySelectorAll('[data-preset]').forEach(button=>{button.classList.remove('active');button.setAttribute('aria-pressed','false');});renderMapContext();}));
 const layerPresets={field:{flood:false,roads:true,shelters:true,buildings:true,reports:true},connection:{flood:true,roads:true,shelters:true,buildings:true,reports:true},terrain:{flood:false,roads:false,shelters:false,buildings:true,reports:false}};
 document.querySelectorAll('[data-preset]').forEach(button=>button.addEventListener('click',()=>{
  for(const [key,enabled] of Object.entries(layerPresets[button.dataset.preset])){map.setLayer(key,enabled);$(`[data-layer="${key}"]`).checked=enabled;}
- document.querySelectorAll('[data-preset]').forEach(el=>{el.classList.toggle('active',el===button);el.setAttribute('aria-pressed',String(el===button));});
+ document.querySelectorAll('[data-preset]').forEach(el=>{el.classList.toggle('active',el===button);el.setAttribute('aria-pressed',String(el===button));});renderMapContext();
 }));
 $('#data-note').addEventListener('click',()=>switchTab('sources'));
 let exportUrl;
@@ -150,7 +212,7 @@ $('#copy-csv').addEventListener('click',async()=>{
  catch{$('#export-csv').focus();$('#export-csv').select();toast('아래 인계표를 선택했습니다. 복사 단축키를 사용해 주세요.');}
 });
 $('#scenario-reset').addEventListener('click',()=>$('#reset-dialog').showModal());
-$('#confirm-reset').addEventListener('click',()=>{state={...scenarioState(1),logs:[]};selected='a';query='';persist();$('#reset-dialog').close();switchTab('overview');render();map.reset();toast('시연 상태와 기록을 초기화했습니다.');});
+$('#confirm-reset').addEventListener('click',()=>{state={...scenarioState(1),logs:[]};selected='a';selectedRoad=null;map.selectRoad(null);query='';persist();$('#reset-dialog').close();switchTab('overview');render();map.reset();toast('시연 상태와 기록을 초기화했습니다.');});
 $('#report-village').required=false;
 $('#report-village').insertAdjacentHTML('beforeend',VILLAGES.map(v=>`<option value="${v.id}">${v.name} · 마을 ${v.code}</option>`).join(''));
 $('#extract-report').addEventListener('click',()=>{
@@ -162,6 +224,27 @@ $('#report-form').addEventListener('submit',event=>{
  event.preventDefault();const text=$('#report-text').value.trim();if(!text){toast('신고 내용을 입력하세요.');return;}
  addLog(text,{village:$('#report-village').value,type:$('#report-type').value,status:'미확인'});$('#report-dialog').close();switchTab('log');render();toast('미확인 신고로 저장했습니다. 도로 상태는 자동 변경되지 않습니다.');
 });
-window.addEventListener('resize',()=>map.resize());
+$('#map-focus').addEventListener('click',()=>setMapFocus(!$('#workspace').classList.contains('map-focused')));
+ document.querySelectorAll('[data-source-mode]').forEach(button=>button.addEventListener('click',()=>{
+  if(!SOURCE_MODES.includes(button.dataset.sourceMode))return;
+  map.setSourceMode(button.dataset.sourceMode);
+  document.querySelectorAll('[data-source-mode]').forEach(el=>{const active=el===button;el.classList.toggle('active',active);el.setAttribute('aria-pressed',String(active));});renderMapContext();
+ }));
+ $('#place-search').addEventListener('input',renderSearch);
+ $('#place-search').addEventListener('focus',()=>{if($('#place-search').value.trim())renderSearch();});
+ $('.place-search').addEventListener('focusout',event=>{if(!event.currentTarget.contains(event.relatedTarget))closeSearch();});
+ document.addEventListener('keydown',event=>{
+  if(event.key==='/'&&!event.ctrlKey&&!event.metaKey&&!event.altKey&&!event.target.matches('input,textarea,select')&&!document.querySelector('dialog[open]')){event.preventDefault();$('#place-search').focus();}
+  if(!event.target.closest('.place-search'))return;
+  if(event.key==='Escape'){closeSearch();$('#place-search').focus();closeSearch();}
+  const buttons=[...$('#place-results').querySelectorAll('button')];
+  if(!$('#place-results').hidden&&buttons.length){
+   const index=buttons.indexOf(document.activeElement);
+   if(event.key==='ArrowDown'){event.preventDefault();buttons[(index+1)%buttons.length].focus();}
+   if(event.key==='ArrowUp'){event.preventDefault();if(index<=0)$('#place-search').focus();else buttons[index-1].focus();}
+   if(event.key==='Enter'&&event.target.id==='place-search'){event.preventDefault();buttons[0].click();}
+  }
+ });
+ window.addEventListener('resize',()=>map.resize());
 render();map.init(state);registerTools();
 if(!storageAvailable)toast('브라우저 저장 공간을 사용할 수 없어 이번 화면에서만 기록합니다.');

@@ -119,6 +119,10 @@ function shelterEvidence(id, state) {
   };
 }
 
+export function getSituationEvidence(state) {
+  return [...ROADS.map(road => roadEvidence(road.id, state)), ...SHELTERS.map(shelter => shelterEvidence(shelter.id, state))];
+}
+
 function addEvidence(items, seen, item) {
   if (!item) return;
   const key = `${item.kind}:${item.id}`;
