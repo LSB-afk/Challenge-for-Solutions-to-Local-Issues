@@ -2,6 +2,7 @@ import {VILLAGES,SHELTERS,ROADS,SCENARIOS,SOURCES} from './data.js';
 import {scenarioState,analyzeAll,analyzeVillage,extractReport,exportCsv,csvCell} from './engine.js';
 import {scenarioMinute,getOperationalContext,getVillageEvidence,confirmEvidence} from './operations.js';
 import {getSituationSummary,searchPlaces,SOURCE_MODES} from './situation.js';
+import {getConfirmationPriorities} from './verification.js';
 import {AccessMap} from './map.js';
 
 const $=s=>document.querySelector(s);
@@ -48,6 +49,14 @@ function renderComparison(context){
  comparison.rows.map(row=>{const village=VILLAGES.find(v=>v.id===row.id);return `<button class="comparison-card ${row.id===selected?'active':''}" data-select-village="${row.id}" aria-pressed="${row.id===selected}"><div><strong>${village.code} · ${village.name}</strong><small class="change-${row.change}">${labels[row.change]}</small></div><span class="comparison-status"><span class="${row.before.status}">${comparison.baselineScenario===null?'기준 없음':row.before.label}</span>${icon('arrow')}<span class="${row.after.status}">${row.after.label}</span></span></button>`;}).join('')+
  `<div class="sidebar-action"><p>‘연결 경로 있음’은 가상 도로망 계산 결과입니다. 실제 통행 안전을 보장하지 않습니다.</p><button class="button secondary full" data-open-tab="overview">대응 현황으로 돌아가기</button></div>`;
 }
+function renderConfirmationQueue(){
+ const rows=getConfirmationPriorities(state);
+ const labels={connected:'연결 경로 있음',unknown:'추가 확인 필요',blocked:'연결 확인 불가'};
+ return header('어디부터 확인할까요?','한 지점의 확인 결과에 따라 연결 판단이 달라지는 마을 수를 비교합니다.',`<span class="count">${rows.length}건</span>`)+
+ `<div class="verification-intro"><strong>확인 한 번이 미치는 영향</strong><p>다른 입력은 그대로 두고, 선택한 도로·시설의 상태만 두 가지로 가정합니다. 실제 확인 결과를 입력하기 전까지 현재 상태는 유지됩니다.</p><small>시연 도로망 · 조건 비교 · 구조·대피 순위 아님</small></div>`+
+ (rows.length?rows.map((item,index)=>`<section class="verification-card"><div class="verification-heading"><span class="verification-order">${index+1}</span><h3>${escape(item.name)}</h3><span class="impact-count">${item.affectedCount}개 마을</span></div><p class="verification-meta">${item.freshness==='stale'?`재확인 필요 · 훈련 ${item.checkedAt}`:'상태 미확인 · 확인 시각 없음'}</p>${item.villages.length?`<p>두 확인 결과에 따라 판단이 달라집니다.</p><div class="outcome-list">${item.villages.map(row=>`<div><strong>마을 ${VILLAGES.find(v=>v.id===row.id).code}</strong><span>${item.kind==='road'?'통행 가능':'개방'} 확인 시 <b class="${row.whenOpen}">${labels[row.whenOpen]}</b></span><span>${item.kind==='road'?'통제':'미개방'} 확인 시 <b class="${row.whenClosed}">${labels[row.whenClosed]}</b></span></div>`).join('')}</div>`:'<p>이 항목 하나의 상태만 바꿔서는 마을의 연결 판정이 달라지지 않습니다. 다른 미확인 항목도 함께 확인해야 할 수 있습니다.</p>'}<button class="button secondary full" ${item.kind==='road'?`data-road-inspect="${item.id}"`:`data-shelter-inspect="${item.id}"`}>근거 확인·상태 입력 ${icon('arrow')}</button></section>`).join(''):'<div class="empty-state">미확인·재확인 대상이 없습니다.<br>최신 입력 상태를 기준으로 계산했습니다.</div>')+
+ `<div class="sidebar-action"><p>마을 수가 같으면 미확인 항목을 먼저 표시합니다. 실제 주민 수·위험도·확인에 걸리는 시간은 반영되지 않았습니다.</p><a class="button secondary full" href="./evaluation.html">업무 비교 평가 열기 ↗</a></div>`;
+}
 function renderSidebar(){
   const panel=$('#sidebar-content');
   if(tab==='overview'){
@@ -56,6 +65,8 @@ function renderSidebar(){
     `<div class="summary-strip"><div class="summary-item blocked"><strong>${counts.blocked}</strong><span>연결 확인 불가</span></div><div class="summary-item unknown"><strong>${counts.unknown}</strong><span>추가 확인</span></div><div class="summary-item connected"><strong>${counts.connected}</strong><span>연결 경로 있음</span></div></div>`+renderBriefing(context)+`<div class="list-tools"><div class="search-box">${icon('search')}<input id="village-search" type="search" aria-label="마을 검색" placeholder="마을 이름 또는 A–D 검색" value="${escape(query)}"></div><div class="list-caption"><span>확인할 마을</span><small>확인 우선순</small></div></div><div class="village-list" id="village-list"></div><div class="sidebar-action"><button class="button primary full" data-report>${icon('plus')}현장 신고 기록</button><p>시연용 도로망 기준입니다.<br>마을을 선택해 판단 근거를 확인하세요.</p></div>`;
     renderVillageList();
     $('#village-search').addEventListener('input',e=>{query=e.target.value;renderVillageList();});
+  }else if(tab==='verification'){
+    panel.innerHTML=renderConfirmationQueue();
   }else if(tab==='incidents'){
     panel.innerHTML=renderSituationList();
   }else if(tab==='comparison'){
@@ -202,6 +213,9 @@ $('#export').addEventListener('click',()=>{
  const context=getOperationalContext(state,state.logs);
  const extra=[[],['대응 브리핑 · 규칙 기반 시연',context.clock],...context.briefing.lines.map(line=>[line]),[],['마을','다음 확인','근거 이름','시연 상태','출처','훈련 확인 시각','최신성']];
  for(const village of VILLAGES){const evidence=getVillageEvidence(village.id,state,state.logs);for(const item of evidence.items)extra.push([village.name,evidence.nextAction,item.name,item.label,item.source,item.checkedAt,{recent:'최근 확인',stale:'재확인 필요',unknown:'판단 보류'}[item.freshness]]);}
+ extra.push([],['확인 우선순위 · 시연 조건 비교, 현장 관측·대피순위 아님'],['순서','확인할 근거','현재 상태','출처','훈련 확인 시각','판단이 달라지는 마을 수','마을별 두 가정의 결과']);
+ const resultLabels={connected:'연결 경로 있음',unknown:'추가 확인 필요',blocked:'연결 확인 불가'};
+ getConfirmationPriorities(state).forEach((item,index)=>extra.push([index+1,item.name,item.label,item.source,item.checkedAt,item.affectedCount,item.villages.map(row=>`마을 ${VILLAGES.find(v=>v.id===row.id).code}: ${item.kind==='road'?'통행 가능':'개방'} 확인 시 ${resultLabels[row.whenOpen]} / ${item.kind==='road'?'통제':'미개방'} 확인 시 ${resultLabels[row.whenClosed]}`).join(' | ')]));
  const csv=exportCsv(state,state.logs)+'\r\n'+extra.map(row=>row.map(csvCell).join(',')).join('\r\n');$('#export-csv').value=csv;
  exportUrl=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'}));
  $('#download-csv').href=exportUrl;$('#download-csv').download=`운산_시연_인계표_${new Date().toISOString().slice(0,10)}.csv`;
