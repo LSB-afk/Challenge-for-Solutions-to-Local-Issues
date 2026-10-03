@@ -3,7 +3,7 @@ import { FloodMap } from './flood-map.js';
 import { csvCell } from './engine.js';
 const $ = selector => document.querySelector(selector);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
-const state = { level:1, depths:null, roads:null, places:[], exposure:null, route:null, imported:false, official:false, fileName:'', threshold:.5, verticalScale:1, view:'3d', buildings:true, building3d:true, water:true, selected:null };
+const state = { level:1, depths:null, roads:null, places:[], exposure:null, route:null, imported:false, official:false, fileName:'', threshold:.5, verticalScale:1, view:'3d', buildings:true, building3d:true, water:true, roadsVisible:true, labels:true, locked:false, selected:null };
 let sourceRevision=0, officialController=null;
 const depthLabel = feature => feature.properties.depth_kind==='interval' ? feature.properties.depth_label : `${feature.properties.depth_m.toFixed(2)} m`;
 const featureColor = feature => /^#[0-9a-f]{6}$/i.test(feature.properties.depth_color??'')?feature.properties.depth_color:depthColor(feature.properties.depth_m);
@@ -13,10 +13,10 @@ const distance = value => Number.isFinite(value) ? value < 1000 ? `${Math.round(
 function download(name,text,type='text/plain;charset=utf-8') {
  const url=URL.createObjectURL(new Blob([text],{type})),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
-const map = new FloodMap({container:'#f-map',fallbackContainer:'#f-map-fallback',onDepth:showDepth,onRoad:showRoad,onPlace(id){ if(state.places.some(p=>p.id===id)){ $('#f-destination').value=id;calculate(); }},onStatus(status){
+const map = new FloodMap({container:'#f-map',fallbackContainer:'#f-map-fallback',onDepth:showDepth,onRoad:showRoad,onPlace(id){ const place=state.places.find(p=>p.id===id);if(place){ $('#f-destination').value=id;calculate();showPlace(place); }},onCamera(camera){$('#f-camera-coordinates').textContent=`${camera.lat.toFixed(4)}° N · ${camera.lon.toFixed(4)}° E`;$('#f-bearing').textContent=`${String(Math.round((camera.bearing+360)%360)).padStart(3,'0')}°`;$('#f-compass-needle').style.transform=`rotate(${-camera.bearing}deg)`;},onStatus(status){
  $('#f-map-status').textContent=status.message;
  const diagram=status.mode==='diagram';
- ['#f-view-2d','#f-view-3d','#f-zoom-in','#f-zoom-out','#f-map-north'].forEach(id=>$(id).disabled=diagram);
+ ['#f-view-2d','#f-view-3d','#f-zoom-in','#f-zoom-out','#f-map-north','#f-view-toggle','#f-map-lock'].forEach(id=>$(id).disabled=diagram);
  if(diagram){$('#f-map-error').hidden=false;$('#f-map-error').textContent='3D 지도를 표시할 수 없어 도로·수심 도식과 분석표를 제공합니다.';}
 },onBuildings(status){
  $('#f-building-status').textContent=status.status==='ready'?`운산면 건물 ${status.count.toLocaleString()}개 · 원본 도형`:(status.message || `건물 ${status.count??0}/${status.total??'…'} 불러오는 중`);
@@ -24,11 +24,15 @@ const map = new FloodMap({container:'#f-map',fallbackContainer:'#f-map-fallback'
 }});
 function syncMap(){
  if(!state.depths||!state.exposure)return;
- map.update({depths:state.depths,exposure:state.exposure,route:state.route,verticalScale:state.verticalScale,showFlood:state.water,showBuildings:state.buildings,building3d:state.building3d});
+ map.update({depths:state.depths,exposure:state.exposure,route:state.route,verticalScale:state.verticalScale,showFlood:state.water,showBuildings:state.buildings,building3d:state.building3d,showRoads:state.roadsVisible,showLabels:state.labels});
+ syncLayerButtons();
+ $('#f-display-note').textContent=`${state.official?'등급 상한':'수심'} ×${state.verticalScale} · ${state.building3d?'건물 층수×3 m 가정':'건물 원본 윤곽'}`;
  $('#f-render-note').textContent=`${state.official?'등급 상한 높이':'수심 높이'} ×${state.verticalScale} · ${state.building3d?'건물은 층수×3 m 가정':'건물 원본 윤곽'} · 지형 고도 미적용`;
 }
 function sourceInfo(){
  const props=state.depths.metadata??{};
+ map.depthLabelKind=state.official?'공식 등급':state.imported?'사용자':'예시';
+ $('#f-dock-source').textContent=state.official?'공식 등급 표시':state.imported?'사용자 수심':'예시 수심 비교';
  $('#f-data-kind').textContent=state.official?'공식 시나리오 · 지방하천 100년 빈도':state.imported?'사용자 수심 자료 · 출처 검증 전':'예시 수심 · 공식 예측 미연결';
  $('#f-data-description').textContent=state.official?'원본 침수심 등급 · 실시간 예보 아님':state.imported?state.fileName:'공개 도로·건물에 가정 수심을 겹쳐 봅니다.';
  $('#f-scenario-kind').textContent=state.official?'공식 등급':state.imported?'사용자 자료':'합성 예시';
@@ -72,29 +76,32 @@ function calculate(){
  $('#f-overlap').textContent=summary.intersected;
  $('#f-excluded').textContent=summary.excluded;$('#f-excluded').title=`수심 구간 때문에 불확실하여 제외: ${summary.uncertain??0}개`;
  $('#f-bridges').textContent=summary.bridges;
+ $('#f-hud-overlap').textContent=summary.intersected;$('#f-hud-excluded').textContent=summary.excluded;$('#f-hud-bridges').textContent=summary.bridges;
  $('#f-uncertainty-note').hidden=!summary.uncertain;
  $('#f-uncertainty-note').textContent=`제외 가정 중 ${summary.uncertain??0}개는 수심 등급 안에 기준값이 있어 정확한 초과 여부를 확인할 수 없습니다.`;
  const origin=state.places.find(p=>p.id===$('#f-origin').value),destination=state.places.find(p=>p.id===$('#f-destination').value);
  state.route=compareRoutes(state.roads,state.exposure,asPoint(origin),asPoint(destination),{depths:state.depths,threshold:state.threshold});
  renderRoutes();syncMap();
- if(state.selected?.kind==='road'){const f=state.exposure.features.find(r=>r.properties.osmId===state.selected.id);if(f)showRoad(f);}
+ if(state.selected?.kind==='road'){const f=state.exposure.features.find(r=>r.properties.osmId===state.selected.id);if(f)showRoad(f,{reveal:false});}
 }
-function showDepth(feature){
+function showDepth(feature,{reveal=true}={}){
  if(!feature)return;
+ if(reveal)openSelection();
  const index=state.depths?.features.findIndex(f=>String(f.id)===String(feature.id));
  if(index>=0)$('#f-depth-select').value=String(index);
  state.selected={kind:'depth',id:feature.id};
  const d=feature.properties.display_height_m??feature.properties.depth_m,interval=feature.properties.depth_kind==='interval';
  $('#f-inspector').innerHTML=`<span class="f-eyebrow">${state.official?'공식 시나리오 · 침수심 등급':state.imported?'사용자 자료 · 검증 전':'합성 예시 수심'}</span><h3>${esc(feature.properties.name||`수심 구역 ${index+1}`)}</h3><span class="f-selected-depth ${interval?'interval':''}">${interval?esc(depthLabel(feature)):`${Number(d).toFixed(2)} <small>m</small>`}</span><div class="f-depth-track"><i style="width:${Math.min(100,d/5*100)}%;background:${featureColor(feature)}"></i></div><p>${interval?'구간값 · 정확한 수심 미제공':'지면 기준 수심 값'}<br>${interval?'등급 상한 표시':'입체 높이'} ${(d*state.verticalScale).toFixed(2)} m · ×${state.verticalScale}<br>실시간 관측·수면 표고가 아닙니다.</p>`;
 }
-function showRoad(feature){
+function showRoad(feature,{reveal=true}={}){
+ if(reveal)openSelection();
  const p=feature.properties;state.selected={kind:'road',id:p.osmId};
  const status={outside:'수심 자료와 겹치지 않음',below:'선택한 제외 수심 미만',excluded:'도로 전체 제외 가정','bridge-review':'교량 상판 높이 확인 필요','depth-review':'구간 내 정확한 수심이 없어 제외 가정'}[p.impact]||'형상 정보';
  $('#f-inspector').innerHTML=`<span class="f-eyebrow">공개 도로 · 조건 비교</span><h3>${esc(p.name||'이름 없는 도로')}</h3><span class="f-selected-depth ${p.depth_label?'interval':''}">${p.depth_label?esc(p.depth_label):Number.isFinite(p.depth_m)?p.depth_m.toFixed(2)+' <small>m</small>':'— <small>자료 미포함</small>'}</span><p>${esc(status)}<br>${p.impact==='bridge-review'?'지면 수심으로 교량 상판 침수를 확정하지 않습니다.':p.depth_label?'겹치는 침수심 등급 중 최대 구간입니다.':'겹치는 영역의 최대 수심입니다.'}<br>현재 통행 상태는 미확인입니다.</p><p><a href="https://www.openstreetmap.org/way/${Number(p.osmId)}" target="_blank" rel="noopener">도로 원본 ↗</a></p>`;
 }
 function setDemo(level){
  sourceRevision++;cancelOfficial();state.level=level;state.depths=createDemoFlood(level);state.imported=false;state.official=false;state.fileName='';state.selected=null;
- sourceInfo();calculate();showDepth(state.depths.features[0]);map.focusDepths?.();$('#f-import-message').textContent='';$('#f-import').value='';
+ sourceInfo();calculate();$('#f-selection').hidden=true;map.focusDepths?.();$('#f-import-message').textContent='';$('#f-import').value='';
 }
 async function load(){
  try{
@@ -117,10 +124,10 @@ document.querySelectorAll('[data-flood-level]').forEach(b=>b.addEventListener('c
 $('#f-threshold').addEventListener('input',calculate);
 ['#f-origin','#f-destination'].forEach(id=>$(id).addEventListener('change',calculate));
 $('#f-depth-select').addEventListener('change',()=>{const feature=state.depths.features[Number($('#f-depth-select').value)];showDepth(feature);const ring=feature.geometry.type==='Polygon'?feature.geometry.coordinates[0]:feature.geometry.coordinates[0][0];const points=ring.slice(0,-1);map.focus(points.reduce((sum,p)=>[sum[0]+p[0]/points.length,sum[1]+p[1]/points.length],[0,0]),16);});
-$('#f-vertical-scale').addEventListener('change',()=>{state.verticalScale=Number($('#f-vertical-scale').value);syncMap();if(state.selected?.kind==='depth')showDepth(state.depths.features.find(f=>f.id===state.selected.id));});
-[['#f-show-water','water'],['#f-show-buildings','buildings'],['#f-building-3d','building3d']].forEach(([id,key])=>$(id).addEventListener('change',()=>{state[key]=$(id).checked;syncMap();}));
-['2d','3d'].forEach(view=>$(`#f-view-${view}`).addEventListener('click',()=>{state.view=view;map.setView(view);['2d','3d'].forEach(v=>{$(`#f-view-${v}`).classList.toggle('active',v===view);$(`#f-view-${v}`).setAttribute('aria-pressed',String(v===view));});}));
-$('#f-map-home').addEventListener('click',()=>map.fit());$('#f-fit-route').addEventListener('click',()=>map.fit());
+$('#f-vertical-scale').addEventListener('change',()=>{state.verticalScale=Number($('#f-vertical-scale').value);syncMap();if(state.selected?.kind==='depth')showDepth(state.depths.features.find(f=>f.id===state.selected.id),{reveal:false});});
+[['#f-show-water','water'],['#f-show-buildings','buildings'],['#f-building-3d','building3d'],['#f-show-roads','roadsVisible'],['#f-show-labels','labels']].forEach(([id,key])=>$(id).addEventListener('change',()=>{state[key]=$(id).checked;syncMap();}));
+['2d','3d'].forEach(view=>$(`#f-view-${view}`).addEventListener('click',()=>setView(view)));
+$('#f-map-home').addEventListener('click',()=>map.focusDepths());$('#f-fit-route').addEventListener('click',()=>{toggleMenu(false);map.fit();});
 $('#f-map-north').addEventListener('click',()=>map.north());$('#f-zoom-in').addEventListener('click',()=>map.zoom(1));$('#f-zoom-out').addEventListener('click',()=>map.zoom(-1));$('#f-building-retry').addEventListener('click',()=>map.retryBuildings());
 $('#f-demo-reset').addEventListener('click',()=>{if(state.roads)setDemo(1);});
 $('#f-load-official').addEventListener('click',async()=>{
@@ -137,7 +144,7 @@ $('#f-load-official').addEventListener('click',async()=>{
   if(revision!==sourceRevision)return;
   if(!data.features.length)throw Error('대상 권역에 포함되는 도형이 없습니다.');
   state.depths=data;state.official=true;state.imported=false;state.fileName='';state.selected=null;
-  sourceInfo();calculate();showDepth(data.features[0]);map.focusDepths?.();
+  sourceInfo();calculate();toggleMenu(false);showDepth(data.features[0]);map.focusDepths?.();
   $('#f-official-status').textContent=`공식 원자료 ${data.features.length}개 도형 표시 · 침수심 등급 · 원본 갱신 ${data.metadata?.updated||'2025-12'}`;
  }catch(error){
   if(revision===sourceRevision)$('#f-official-status').textContent=error.name==='AbortError'?'조회를 취소했습니다. 기존 분석을 유지합니다.':`조회 실패: ${error.message} 기존 분석을 유지합니다.`;
@@ -153,7 +160,7 @@ $('#f-import').addEventListener('change',async event=>{
   const parsed=validateDepthCollection(JSON.parse(await file.text()));
   if(revision!==sourceRevision)return;
   state.depths=parsed;state.imported=true;state.official=false;state.fileName=file.name;state.selected=null;
-  sourceInfo();calculate();showDepth(parsed.features[0]);map.focusDepths?.();$('#f-import-message').textContent='수심 자료를 불러왔습니다. 입력된 출처와 조건을 확인해 주세요.';
+  sourceInfo();calculate();toggleMenu(false);showDepth(parsed.features[0]);map.focusDepths?.();$('#f-import-message').textContent='수심 자료를 불러왔습니다. 입력된 출처와 조건을 확인해 주세요.';
  }catch(error){if(revision===sourceRevision)$('#f-import-message').textContent=`불러오기 실패: ${error.message} 기존 자료를 유지합니다.`;}finally{event.target.value='';}
 });
 $('#f-export').addEventListener('click',()=>{
@@ -163,4 +170,65 @@ $('#f-export').addEventListener('click',()=>{
  for(const f of state.exposure.features)rows.push([f.properties.osmId,f.properties.name||'이름 없는 도로',f.properties.depth_m??'자료 미포함',f.properties.impact]);
  download('운산_침수조건_연결비교.csv','\uFEFF'+rows.map(row=>row.map(csvCell).join(',')).join('\r\n'),'text/csv;charset=utf-8');
 });
+function setView(view){
+ state.view=view;map.setView(view);
+ ['2d','3d'].forEach(v=>{$(`#f-view-${v}`).classList.toggle('active',v===view);$(`#f-view-${v}`).setAttribute('aria-pressed',String(v===view));});
+ $('#f-view-toggle').textContent=view==='3d'?'2D':'3D';$('#f-view-toggle').setAttribute('aria-label',`${view==='3d'?'2D':'3D'} 지도로 전환`);
+}
+function toggleMenu(open,section){
+ $('#f-controls').hidden=!open;requestAnimationFrame(()=>map.layoutAnnotations());$('#f-menu-toggle').setAttribute('aria-expanded',String(open));
+ if(open){toggleSettings(false);$('#f-selection').hidden=true;$('#f-controls').focus();if(section){section.scrollIntoView({block:'start'});}else $('#f-controls').scrollTop=0;}
+}
+function toggleSettings(open){
+ $('#f-map-options').hidden=!open;requestAnimationFrame(()=>map.layoutAnnotations());
+ for(const id of ['#f-settings-toggle','#f-layers-toggle'])$(id).setAttribute('aria-expanded',String(open));
+ if(open){toggleMenu(false);$('#f-selection').hidden=true;$('#f-settings-close').focus();}
+}
+function openSelection(){ toggleMenu(false);$('#f-selection').hidden=false;toggleSettings(false);requestAnimationFrame(()=>map.layoutAnnotations()); }
+function showPlace(place){
+ openSelection();state.selected={kind:'place',id:place.id};
+ $('#f-inspector').innerHTML=`<span class="f-eyebrow">FACILITY · 공개 주소 확인</span><h3>${esc(place.name)}</h3><p>${esc(place.officialAddress)}<br>대피시설 지정·개방·출입구 미확인</p><p>이 시설을 도착 지점으로 선택했습니다.</p><button id="f-place-route" class="f-button f-full">시설 연결 조건 보기 ↗</button>`;
+ $('#f-place-route').addEventListener('click',()=>toggleMenu(true,$('#f-origin').closest('section')));
+}
+function syncLayerButtons(){
+ const active=state.water&&state.roadsVisible?'all':state.water?'water':state.roadsVisible?'roads':null;
+ document.querySelectorAll('[data-layer-preset]').forEach(b=>{const selected=b.dataset.layerPreset===active;b.classList.toggle('active',selected);b.setAttribute('aria-pressed',String(selected));});
+}
+$('#f-menu-toggle').addEventListener('click',()=>toggleMenu($('#f-controls').hidden));
+$('#f-menu-close').addEventListener('click',()=>{toggleMenu(false);$('#f-menu-toggle').focus();});
+$('#f-settings-toggle').addEventListener('click',()=>toggleSettings($('#f-map-options').hidden));
+$('#f-layers-toggle').addEventListener('click',()=>toggleSettings($('#f-map-options').hidden));
+$('#f-settings-close').addEventListener('click',()=>{toggleSettings(false);$('#f-settings-toggle').focus();});
+$('#f-inspector-close').addEventListener('click',()=>{$('#f-selection').hidden=true;map.layoutAnnotations();$('#f-menu-toggle').focus();});
+$('#f-source-toggle').addEventListener('click',()=>{$('#f-source-details').open=true;toggleMenu(true,$('#f-source-details'));});
+$('#f-analysis-open').addEventListener('click',()=>toggleMenu(true,$('#f-origin').closest('section')));
+$('#f-center-control').addEventListener('click',()=>map.focusDepths());
+$('#f-view-toggle').addEventListener('click',()=>setView(state.view==='3d'?'2d':'3d'));
+$('#f-map-lock').addEventListener('click',()=>{state.locked=!state.locked;map.setLocked(state.locked);$('#f-map-lock').setAttribute('aria-pressed',String(state.locked));$('#f-map-lock').textContent=state.locked?'잠금 해제':'잠금';});
+document.querySelectorAll('[data-layer-preset]').forEach(button=>button.addEventListener('click',()=>{
+ const value=button.dataset.layerPreset;state.water=value!=='roads';state.roadsVisible=value!=='water';
+ $('#f-show-water').checked=state.water;$('#f-show-roads').checked=state.roadsVisible;syncMap();
+}));
+document.addEventListener('keydown',event=>{if(event.key!=='Escape')return;
+ if(!$('#f-search-results').hidden){$('#f-search-results').hidden=true;$('#f-search').focus();}
+ else if(!$('#f-map-options').hidden){toggleSettings(false);$('#f-settings-toggle').focus();}
+ else if(!$('#f-controls').hidden){toggleMenu(false);$('#f-menu-toggle').focus();}
+ else if(!$('#f-selection').hidden){$('#f-selection').hidden=true;map.layoutAnnotations();$('#f-menu-toggle').focus();}
+});
+function searchPlaces(){
+ const term=$('#f-search').value.trim(),results=$('#f-search-results');results.replaceChildren();
+ if(!term){results.hidden=true;return;}
+ const q=term.toLocaleLowerCase(),seen=new Set();
+ const matches=[...state.places.filter(p=>(p.name+' '+p.officialAddress).toLocaleLowerCase().includes(q)).map(p=>({label:p.name,detail:p.officialAddress,run:()=>{map.focus(asPoint(p),16);showPlace(p);$('#f-destination').value=p.id;calculate();}})),
+ ...(state.roads?.features??[]).filter(f=>{const name=f.properties.name;if(!name||!name.toLocaleLowerCase().includes(q)||seen.has(name))return false;seen.add(name);return true;}).map(f=>({label:f.properties.name,detail:'공개 도로 형상 · 현재 통행 미확인',run:()=>{map.focus(f.geometry.coordinates[Math.floor(f.geometry.coordinates.length/2)],16);showRoad(state.exposure.features.find(r=>r.properties.osmId===f.properties.osmId)||f);}}))].slice(0,8);
+ results.hidden=false;
+ if(!matches.length){const p=document.createElement('p');p.textContent='일치하는 시설·도로가 없습니다. 원평, 고풍, 운산으로 검색해 보세요.';results.append(p);return;}
+ for(const match of matches){const button=document.createElement('button');button.type='button';button.textContent=match.label;const detail=document.createElement('small');detail.textContent=match.detail;button.append(detail);button.addEventListener('click',()=>{results.hidden=true;$('#f-search').value=match.label;match.run();});results.append(button);}
+}
+$('#f-search-form').addEventListener('submit',event=>{event.preventDefault();searchPlaces();$('#f-search-results button')?.focus();});
+$('#f-search').addEventListener('input',searchPlaces);
+document.addEventListener('pointerdown',event=>{if(!event.target.closest('.f-search'))$('#f-search-results').hidden=true;});
+function clock(){const now=new Date();$('#f-clock').dateTime=now.toISOString();$('#f-clock').textContent=now.toLocaleTimeString('en-GB',{hour12:false});}
+clock();setInterval(clock,1000);
+
 load();

@@ -194,7 +194,8 @@ export class FloodMap {
     onRoad = () => {},
     onPlace = () => {},
     onStatus = () => {},
-    onBuildings = () => {}
+    onBuildings = () => {},
+    onCamera = () => {}
   }) {
     this.container = typeof container === 'string' ? document.querySelector(container) : container;
     this.fallbackContainer = typeof fallbackContainer === 'string' ? document.querySelector(fallbackContainer) : fallbackContainer;
@@ -203,6 +204,11 @@ export class FloodMap {
     this.onPlace = onPlace;
     this.onStatus = onStatus;
     this.onBuildings = onBuildings;
+    this.onCamera = onCamera;
+    this.showRoads = true;
+    this.showLabels = true;
+    this.locked = false;
+    this.annotations = [];
     this.view = '3d';
     this.verticalScale = 1;
     this.showFlood = true;
@@ -281,16 +287,22 @@ export class FloodMap {
         this.addPlaceMarkers();
         this.attachMapEvents();
         this.ready = true;
-        this.update({...this.current, verticalScale:this.verticalScale, showFlood:this.showFlood, showBuildings:this.showBuildings, building3d:this.building3d});
+        this.update({...this.current, verticalScale:this.verticalScale, showFlood:this.showFlood, showBuildings:this.showBuildings, building3d:this.building3d, showRoads:this.showRoads, showLabels:this.showLabels});
+        this.setLocked(this.locked);
         this.focusDepths();
         this.resizeObserver?.observe(this.container);
         this.loadBuildings();
+        // MapLibre starts compact attribution expanded; use its own toggle on small screens.
+        if (window.innerWidth <= 600) this.container.querySelector?.('.maplibregl-compact-show .maplibregl-ctrl-attrib-button')?.click();
         clearTimeout(this.loadTimer);
         this.onStatus({ready: true, mode: this.view, message: '수심 자료와 공개 도로 형상을 표시합니다.'});
       } catch (error) {
         this.showFallback(error?.message || '지도 레이어 구성에 실패했습니다.');
       }
     });
+    this.map.on?.('move', () => this.emitCamera());
+    this.map.on?.('moveend', () => this.layoutAnnotations());
+    this.map.on?.('resize', () => this.layoutAnnotations());
     this.map.on?.('error', event => {
       if (!this.ready && event?.error?.message?.includes?.('WebGL')) this.showFallback('WebGL을 사용할 수 없어 도식 모드로 전환했습니다.');
     });
@@ -303,7 +315,7 @@ export class FloodMap {
     map.addSource('f-roads', {type: 'geojson', data: this.roads});
     map.addSource('f-route', {type: 'geojson', data: EMPTY});
     map.addLayer({id: 'f-depth-fill', type: 'fill', source: 'f-depths', paint: {'fill-color': DEPTH_COLOR, 'fill-opacity': 0.4}}, before);
-    map.addLayer({id: 'f-depth-line', type: 'line', source: 'f-depths', paint: {'line-color': '#245b8f', 'line-opacity': 0.75, 'line-width': ['interpolate', ['linear'], ['zoom'], 11, 0.8, 16, 2]}}, before);
+    map.addLayer({id: 'f-depth-line', type: 'line', source: 'f-depths', paint: {'line-color': '#245b8f', 'line-opacity': 0.22, 'line-width': ['interpolate', ['linear'], ['zoom'], 11, 0.3, 16, 0.6]}}, before);
     map.addLayer({
       id: 'f-depth-extrusion',
       type: 'fill-extrusion',
@@ -312,7 +324,7 @@ export class FloodMap {
         'fill-extrusion-color': DEPTH_COLOR,
         'fill-extrusion-height': ['*', HEIGHT_INPUT, this.verticalScale],
         'fill-extrusion-base': 0,
-        'fill-extrusion-opacity': 0.46
+        'fill-extrusion-opacity': 0.38
       }
     }, before);
     map.addLayer({id: 'f-road-casing', type: 'line', source: 'f-roads', paint: {'line-color': '#ffffff', 'line-opacity': 0.92, 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 2, 15, 6]}}, before);
@@ -362,7 +374,14 @@ export class FloodMap {
       if (!point || !this.map) return;
       const button = el('button', 'f-place-marker');
       button.type = 'button';
-      button.textContent = String(index + 1);
+      const health = /health|clinic/.test(place.category ?? '') || /진료|보건/.test(place.name ?? '');
+      if (health) button.className += ' health';
+      const icon = el('span', 'f-place-icon');
+      icon.innerHTML = health ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6v6h6v6h-6v6H9v-6H3V9h6z"/></svg>' : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 11 9-8 9 8M5 10v11h5v-7h4v7h5V10"/></svg>';
+      const label = el('span', 'f-place-pill');
+      label.textContent = place.name ?? `시설 ${index + 1}`;
+      const note = el('small'); note.textContent = '공개 주소 · 개방 미확인'; label.append(note);
+      button.append(icon, label);
       button.title = place.name ?? `시설 ${index + 1}`;
       button.setAttribute('aria-label', `${button.title} 위치 보기`);
       button.addEventListener('click', () => this.onPlace(place.id ?? index, place));
@@ -424,11 +443,13 @@ export class FloodMap {
     return this.loadBuildings();
   }
 
-  update({depths, exposure, route, verticalScale = 1, showFlood = true, showBuildings = true, building3d = true} = {}) {
+  update({depths, exposure, route, verticalScale = 1, showFlood = true, showBuildings = true, building3d = true, showRoads = true, showLabels = true} = {}) {
     this.verticalScale = Number.isFinite(Number(verticalScale)) && Number(verticalScale) > 0 ? Number(verticalScale) : 1;
     this.showFlood = showFlood !== false;
     this.showBuildings = showBuildings !== false;
     this.building3d = building3d !== false;
+    this.showRoads = showRoads !== false;
+    this.showLabels = showLabels !== false;
     const safeDepths = safeCollection(depths, validPolygon, normalizeDepthFeature);
     const sourceRoads = isFeatureCollection(exposure) && exposure.features.length ? exposure : this.roads;
     const safeRoads = safeCollection(sourceRoads, validLine, (feature, index) => {
@@ -451,10 +472,12 @@ export class FloodMap {
     this.map.getSource('f-route')?.setData(COLLECTION(routeFeatures(route)));
     if (this.map.getLayer('f-depth-extrusion')) this.map.setPaintProperty('f-depth-extrusion', 'fill-extrusion-height', ['*', HEIGHT_INPUT, this.verticalScale]);
     this.applyVisibility();
+    this.updateAnnotations();
   }
 
   applyVisibility() {
     if (!this.map) return;
+    for (const id of ['f-road-casing', 'f-road-lines', 'f-route-before', 'f-route-after-casing', 'f-route-after', 'f-route-connectors']) setLayerVisibility(this.map, id, this.showRoads);
     const flood2d = this.showFlood;
     const flood3d = this.showFlood && this.view === '3d';
     setLayerVisibility(this.map, 'f-depth-fill', flood2d);
@@ -490,19 +513,94 @@ export class FloodMap {
     const features = [...this.current.depths.features, ...route];
     const bounds = boundsFor(features);
     if (this.fallback) return;
-    this.map?.fitBounds(bounds, {padding: this.fitPadding(), maxZoom: 16, duration: this.duration()});
+    this.map?.fitBounds(bounds, {padding: this.fitPadding(), bearing:this.view==='3d'?-18:0, maxZoom:17.3, duration:this.duration()});
   }
 
   focusDepths() {
     const features = this.current.depths.features.length ? this.current.depths.features : routeFeatures(this.current.route).filter(feature => feature.properties.kind === 'main');
     if (!features.length) return this.fit();
     if (this.fallback) return;
-    this.map?.fitBounds(boundsFor(features), {padding: this.fitPadding(), maxZoom: 16, duration: this.duration()});
+    this.map?.fitBounds(boundsFor(features), {padding: this.fitPadding(), bearing:this.view==='3d'?-18:0, maxZoom:17.3, duration:this.duration()});
   }
 
   fitPadding() {
-    if (window.innerWidth <= 760) return {top: 190, bottom: 180, left: 30, right: 30};
-    return {top: 190, bottom: 170, left: 30, right: 240};
+    if (window.innerWidth <= 600) return {top: 120, bottom: 205, left: 16, right: 25};
+    return {top: 80, bottom: 105, left: 60, right: 70};
+  }
+
+  emitCamera() {
+    if (!this.map?.getCenter) return;
+    const center = this.map.getCenter();
+    this.onCamera({lon:center.lng, lat:center.lat, bearing:this.map.getBearing(), pitch:this.map.getPitch(), zoom:this.map.getZoom()});
+  }
+
+  setLocked(locked) {
+    this.locked = Boolean(locked);
+    for (const key of ['dragPan','scrollZoom','boxZoom','dragRotate','keyboard','doubleClickZoom','touchZoomRotate','touchPitch']) {
+      this.map?.[key]?.[this.locked ? 'disable' : 'enable']?.();
+    }
+  }
+
+  updateAnnotations() {
+    this.annotations.forEach(item => item.marker.remove());
+    this.annotations = [];
+    if (!this.map || !window.maplibregl?.Marker || !this.showLabels) return;
+    const add = (feature, type) => {
+      let point;
+      if (type === 'depth') {
+        const ring = feature.geometry.type === 'Polygon' ? feature.geometry.coordinates[0] : feature.geometry.coordinates[0][0];
+        // Anchor at an actual polygon vertex; centroids can fall outside concave areas.
+        point = ring[Math.floor((ring.length - 1) / 2)];
+      } else {
+        const line = feature.geometry.coordinates; point = line[Math.floor(line.length / 2)];
+      }
+      const props = feature.properties, button = el('button', `f-annotation f-${type}-marker ${props.impact ?? ''}`);
+      button.type = 'button';
+      if (type === 'depth') {
+        const icon=el('span','f-water-icon'); icon.textContent='≋'; icon.setAttribute('aria-hidden','true');
+        const value=el('strong'); value.textContent=props.depth_label || `${props.depth_m.toFixed(2)} m`;
+        const kind=el('small'); kind.textContent=this.depthLabelKind || '수심';
+        button.append(icon,value,kind); button.setAttribute('aria-label', `${props.name || '수심 구역'} · ${value.textContent} · ${kind.textContent}`);
+        button.addEventListener('click', () => this.onDepth(feature));
+      } else {
+        const icon=el('b'); icon.textContent='△'; icon.setAttribute('aria-hidden','true');
+        const value=el('span'); value.textContent=props.impact==='excluded' ? '도로 제외 가정' : props.impact==='bridge-review' ? '교량 확인' : '수심 구간 확인';
+        button.append(icon,value);button.setAttribute('aria-label',`${props.name || '도로'} · ${value.textContent}`);
+        button.addEventListener('click', () => this.onRoad(feature));
+      }
+      const marker=new window.maplibregl.Marker({element:button, anchor:'center', opacityWhenCovered:1}).setLngLat(point).addTo(this.map);
+      this.annotations.push({marker,button,point,type});
+    };
+    // Every area remains rendered; labels are sampled and collision filtered for legibility.
+    if (this.showFlood) {
+      const ordered=[...this.current.depths.features].sort((a,b)=>b.properties.depth_m-a.properties.depth_m);
+      const step=Math.max(1,Math.ceil(ordered.length/45));
+      ordered.filter((_,i)=>i%step===0).forEach(f=>add(f,'depth'));
+    }
+    if (this.showRoads) this.current.exposure.features.filter(f=>['excluded','depth-review','bridge-review'].includes(f.properties.impact)).slice(0,40).forEach(f=>add(f,'road'));
+    this.layoutAnnotations();
+  }
+
+  layoutAnnotations() {
+    if (!this.map?.project || !this.container) return;
+    const width=this.container.clientWidth, height=this.container.clientHeight, mobile=width<=600;
+    const overlayRects = [...(document.querySelectorAll?.('.f-legend,.f-scenario-dock,.f-layer-switch,.f-map-heading,.f-map-context,.f-display-note,.f-building-status,.f-selection:not([hidden]),.f-map-options:not([hidden])') ?? [])].map(el=>el.getBoundingClientRect());
+    const containerRect = this.container.getBoundingClientRect?.() ?? {left:0,top:0};
+    this.markers.forEach(marker=>{
+      const button=marker.getElement?.(), point=marker.getLngLat?.();if(!button||!point)return;
+      const pos=this.map.project(point), w=mobile?115:170;
+      button.hidden=pos.x<w/2 || pos.x>width-w/2 || pos.y<45 || pos.y>height-90
+        || overlayRects.some(r=>pos.x+w/2>r.left-containerRect.left && pos.x-w/2<r.right-containerRect.left && pos.y+40>r.top-containerRect.top && pos.y-35<r.bottom-containerRect.top);
+    });
+    const occupied=this.places.map(place=>placePoint(place)).filter(Boolean).map(point=>{const p=this.map.project(point);return {x:p.x,y:p.y,w:mobile?115:170,h:70};});
+    for (const item of this.annotations) {
+      const p=this.map.project(item.point), w=item.type==='depth'?(mobile?100:140):130, h=45;
+      const visible=p.x>w/2+12 && p.x<width-w/2-55 && p.y>(mobile?145:180) && p.y<height-(mobile?215:165)
+        && !overlayRects.some(r=>p.x+w/2+8>r.left-containerRect.left && p.x-w/2-8<r.right-containerRect.left && p.y+h/2+8>r.top-containerRect.top && p.y-h/2-8<r.bottom-containerRect.top)
+        && !occupied.some(r=>Math.abs(r.x-p.x)<(r.w+w)/2 && Math.abs(r.y-p.y)<(r.h+h)/2);
+      item.button.hidden=!visible;
+      if(visible) occupied.push({x:p.x,y:p.y,w,h});
+    }
   }
 
   zoom(delta) {
@@ -523,6 +621,8 @@ export class FloodMap {
     clearTimeout(this.loadTimer);
     this.fallback = true;
     this.ready = false;
+    this.annotations.forEach(item => item.marker.remove());
+    this.annotations = [];
     this.map?.remove?.();
     this.map = null;
     if (this.container) this.container.hidden = true;
@@ -553,8 +653,10 @@ export class FloodMap {
     if (this.showFlood) {
       for (const feature of this.current.depths.features) this.appendPolygon(svg, feature, project);
     }
-    for (const feature of this.current.exposure.features.length ? this.current.exposure.features : this.roads.features) this.appendRoad(svg, feature, project);
-    for (const feature of routeFeatures(this.current.route)) this.appendRoute(svg, feature, project);
+    if (this.showRoads) {
+      for (const feature of this.current.exposure.features.length ? this.current.exposure.features : this.roads.features) this.appendRoad(svg, feature, project);
+      for (const feature of routeFeatures(this.current.route)) this.appendRoute(svg, feature, project);
+    }
     this.places.forEach((place, index) => this.appendPlace(svg, place, index, project));
     const note = document.createElementNS(SVG_NS, 'text');
     note.setAttribute('x', '40');

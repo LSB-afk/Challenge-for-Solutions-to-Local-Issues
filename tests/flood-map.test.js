@@ -180,3 +180,51 @@ test('MapLibre 모드에서 수심 배율은 extrusion 높이만 갱신하고 �
     dom.restore();
   }
 });
+
+test('지도 잠금은 모든 입력 방식을 막고 해제하며 카메라 좌표를 전달한다', () => {
+  const dom=installDom(),camera=[];
+  try {
+    const renderer=new FloodMap({container:'#map',fallbackContainer:'#fallback',onCamera:value=>camera.push(value)});
+    const calls=[];
+    const interactions=Object.fromEntries(['dragPan','scrollZoom','boxZoom','dragRotate','keyboard','doubleClickZoom','touchZoomRotate','touchPitch'].map(key=>[key,{disable(){calls.push(`${key}:off`);},enable(){calls.push(`${key}:on`);}}]));
+    renderer.map={...interactions,getCenter:()=>({lng:126.63,lat:36.77}),getBearing:()=>-18,getPitch:()=>58,getZoom:()=>15};
+    renderer.setLocked(true);assert.equal(renderer.locked,true);assert.equal(calls.filter(x=>x.endsWith(':off')).length,8);
+    renderer.setLocked(false);assert.equal(renderer.locked,false);assert.equal(calls.filter(x=>x.endsWith(':on')).length,8);
+    renderer.emitCamera();assert.deepEqual(camera[0],{lon:126.63,lat:36.77,bearing:-18,pitch:58,zoom:15});
+    renderer.map=null;assert.doesNotThrow(()=>renderer.setLocked(true));
+  } finally {dom.restore();}
+});
+
+test('지도 표식은 원본 구간 표기를 유지하고 갱신·숨김 때 이전 표식을 제거한다', () => {
+  const dom=installDom(),created=[],selected=[];
+  try {
+    window.maplibregl={Marker:class{
+      constructor(options){this.element=options.element;created.push(this);}
+      setLngLat(point){this.point=point;return this;}addTo(){return this;}remove(){this.removed=true;}
+    }};
+    const renderer=new FloodMap({container:'#map',fallbackContainer:'#fallback',onDepth:f=>selected.push(f)});
+    renderer.map={};renderer.depthLabelKind='공식 등급';
+    renderer.current={depths:collection([officialInterval()]),exposure:collection([line(7,'bridge-review')])};
+    renderer.updateAnnotations();assert.equal(created.length,2);
+    assert.equal(created[0].element.children[1].textContent,'5 m 이상');
+    assert.equal(created[0].element.children[2].textContent,'공식 등급');
+    created[0].element.onclick();assert.equal(selected[0].id,'official-1');
+    renderer.showFlood=false;renderer.updateAnnotations();
+    assert.ok(created[0].removed && created[1].removed);assert.equal(renderer.annotations.length,1);
+    renderer.showLabels=false;renderer.updateAnnotations();assert.equal(renderer.annotations.length,0);assert.ok(created.at(-1).removed);
+  } finally {dom.restore();}
+});
+
+test('도식 모드에서도 수심·도로 레이어 선택이 유지된다', async () => {
+  const dom=installDom();
+  try {
+    const renderer=new FloodMap({container:'#map',fallbackContainer:'#fallback'});
+    await renderer.init({roads:collection([line(1)]),places:[]});
+    renderer.update({depths:collection([polygon(.5)]),showRoads:false});
+    assert.equal(dom.fallback.children[0].children.filter(n=>n.tagName==='polyline').length,0);
+    assert.equal(dom.fallback.children[0].children.filter(n=>n.tagName==='path').length,1);
+    renderer.update({depths:collection([polygon(.5)]),showFlood:false,showRoads:true});
+    assert.equal(dom.fallback.children[0].children.filter(n=>n.tagName==='path').length,0);
+    assert.equal(dom.fallback.children[0].children.filter(n=>n.tagName==='polyline').length,1);
+  } finally {dom.restore();}
+});

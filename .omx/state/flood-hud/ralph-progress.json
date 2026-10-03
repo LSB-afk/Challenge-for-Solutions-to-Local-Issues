@@ -1,0 +1,54 @@
+{
+  "iteration": 4,
+  "status": "complete",
+  "score": 92,
+  "score_basis": "Manual UX/layout assessment, not pixel similarity",
+  "verdict": "pass",
+  "category_match": true,
+  "reference": "https://situational-bangkok-flood.web.app/3d/",
+  "captures": [
+    "artifacts/reference-hud/reference-map-closed.png",
+    "artifacts/reference-hud/iteration-final-desktop.png",
+    "artifacts/reference-hud/iteration-final-mobile.png"
+  ],
+  "differences": [
+    "White theme retained at user request",
+    "Unsan geography and actual available records determine marker density",
+    "Reference live weather/CCTV/SOS feeds are not connected"
+  ],
+  "suggestions": [],
+  "reasoning": "Full-viewport map, two-row HUD, floating panels, circular controls and anchored depth/facility/road badges match the requested interaction structure. Final 320/390/900px checks found no note or legend overlaps. Data provenance and display assumptions remain visible.",
+  "history": [
+    {
+      "iteration": 1,
+      "score": 78,
+      "verdict": "revise"
+    },
+    {
+      "iteration": 2,
+      "score": 85,
+      "verdict": "revise"
+    },
+    {
+      "iteration": 3,
+      "score": 89,
+      "verdict": "revise"
+    },
+    {
+      "iteration": 4,
+      "score": 92,
+      "verdict": "pass"
+    }
+  ],
+  "verification": {
+    "unit_tests": 89,
+    "browser_checks": 21,
+    "viewport_widths": [
+      320,
+      390,
+      900,
+      1440
+    ],
+    "page_runtime_errors": 0
+  }
+}
