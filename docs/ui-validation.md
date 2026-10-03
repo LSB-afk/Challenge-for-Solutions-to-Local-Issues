@@ -35,3 +35,13 @@
 - `npm run check`, `npm run build`, `git diff --check` 통과. 신규 의존성 없음.
 
 검증 산출물(로컬, Git 제외): `artifacts/reference-hud/verification.json`, `unit-tests.txt`, `iteration-final-desktop.png`, `iteration-final-mobile.png`, `official-hud.png`.
+
+## 2026-10-03: Pretendard 공통 적용
+
+- 메인·침수 3D·지역 근거·평가 페이지에 로컬 Pretendard Variable v1.3.9와 라이선스를 포함했다. 별도 패키지 의존성은 없다.
+- 네 페이지에서 폰트 요청 HTTP 200, FontFace 로드 완료, Chrome 실제 렌더링 폰트 Pretendard를 확인했다. 표시된 UI 텍스트의 computed font-family 불일치는 0건이다.
+- 각 페이지를 1440/390/320px에서 검사했다. 페이지 가로 넘침과 페이지 런타임 오류는 0건이다. 침수 HUD의 PC·모바일 화면도 직접 확인했다.
+- 기존 Node 테스트 89개와 `npm run check`, `npm run build`, `git diff --check` 통과.
+- 배경지도 캔버스의 제공처 지명 글꼴은 공통 CSS 적용 대상이 아니다.
+
+검증 산출물(로컬, Git 제외): `artifacts/pretendard/verification.json`, 페이지별 PC·모바일 캡처.

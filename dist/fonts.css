@@ -1,0 +1,24 @@
+/* Pretendard v1.3.9 · Copyright Kil Hyung-jin · SIL OFL 1.1.
+   Original font and license: ./fonts/pretendard/ */
+@font-face {
+  font-family: "Pretendard";
+  font-style: normal;
+  font-weight: 45 920;
+  font-display: swap;
+  src: url("./fonts/pretendard/PretendardVariable.woff2") format("woff2");
+}
+
+:root {
+  --font-ui: "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+  font-family: var(--font-ui);
+}
+
+body, button, input, select, textarea, code, pre, kbd, samp,
+.maplibregl-map, .maplibregl-ctrl, .maplibregl-popup {
+  font-family: var(--font-ui);
+}
+
+time, .f-hud-metrics b, .f-coordinates, .f-depth-marker strong,
+.f-depth-legend span, .f-selected-depth {
+  font-variant-numeric: tabular-nums;
+}
