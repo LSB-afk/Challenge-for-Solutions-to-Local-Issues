@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "node server.mjs",
-    "check": "node --check dist/data.js && node --check dist/engine.js && node --check dist/buildings.js && node --check dist/map.js && node --check dist/situation.js && node --check dist/operations.js && node --check dist/app.js && node --check server.mjs && node --check dist/verification.js && node --check dist/regional.js && node --check dist/evaluation-engine.js && node --check dist/evaluation.js && node --check scripts/prepare-handout.mjs && node --check scripts/fetch-regional-data.mjs",
+    "check": "node --check dist/data.js && node --check dist/engine.js && node --check dist/buildings.js && node --check dist/map.js && node --check dist/situation.js && node --check dist/operations.js && node --check dist/app.js && node --check server.mjs && node --check dist/verification.js && node --check dist/regional.js && node --check dist/evaluation-engine.js && node --check dist/evaluation.js && node --check scripts/prepare-handout.mjs && node --check scripts/fetch-regional-data.mjs && node --check dist/flood.js && node --check dist/flood-analysis.js && node --check dist/flood-map.js && node --check dist/flood-official.js && node --check dist/flood-official-worker.js",
     "test": "node --test tests/*.test.js",
     "build": "node scripts/prepare-handout.mjs"
   }

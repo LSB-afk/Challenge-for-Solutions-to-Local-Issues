@@ -78,3 +78,13 @@ rvrType=3
 - OSM bbox 부분 추출 도로형상 313개와 bridge 태그 객체 33개를 저장했다. 교량 개수·통행 가능 도로 수가 아니며 도로 상태는 모두 unknown이다.
 - 상세 출처, 생성 기준시각, 원본 OSM ID, 이용조건, 미확인 항목은 [지역 검증 기록](regional-validation.md)과 `dist/data/regional-evidence.json`을 따른다.
 - 인터뷰 및 참여자 비교평가 미실시. 인터뷰 준비 자료와 가상 과제 평가도구를 작성했으며 실증 성과를 기재하지 않았다.
+
+## 2026-10-03 — 공식 침수심 원자료·3D·시설 연결
+
+- [홍수위험지도 안내](https://www.floodmap.go.kr/intro): 예상 범위·깊이는 정해진 시나리오를 전제로 하며 실시간 관측·예보와 다르다.
+- [공식 원자료 포털](https://data.floodmap.go.kr/): 서산시 지방하천 100년 빈도 `RFM_SGG_RGN_44210_100.zip`, 갱신 2025.12. `SEG_CODE` N330(<0.5m), N331(0.5–1m), N332(1–2m), N333(2–5m), N334(≥5m). EPSG:5186, `FLDLV_FREQ=100`, `SGG_CD=44210`을 확인했다.
+- 대상 bbox `[126.595,36.745,126.645,36.795]`에 지방하천 자료가 북동측 일부에서 교차한다. 이는 원평소하천이나 전체 시범구역 침수 범위를 확보했다는 의미가 아니다. 같은 조건의 서산 도시침수 SHP는 이 bbox와 겹치지 않았다.
+- 공식 ZIP과 변환 도형은 GitHub와 배포물에 포함하지 않는다. 사이트는 사용자가 조회할 때 제공처에 직접 요청하고 메모리에서만 표시한다. 공식 분석표·도형 내보내기는 제공하지 않는다.
+- [공공누리 4유형](https://www.kogl.or.kr/info/licenseType4.do)과 [이용조건](https://www.kogl.or.kr/info/license.do): 출처표시·비상업·변경금지. 메모리 처리 설계가 재가공/공개 제출 허락을 확보했다는 뜻은 아니다. 추가 재사용 범위는 제공기관 확인이 필요하다.
+- [MapLibre fill-extrusion](https://maplibre.org/maplibre-style-spec/layers/#fill-extrusion-height): 미터 단위 표현 높이로 수심/등급 상한을 표시한다. 층수×3m 건물과 수심 배율은 표현 가정이며 지형에 맞춘 수면 표고가 아니다.
+- [ArcGIS Closest Facility](https://doc.esri.com/en/arcgis-pro/latest/help/analysis/networks/closest-facility-analysis-layer.html): 네트워크·제약을 이용한 시설 연결 분석 개념의 참고자료다. 이번 구현은 자체 형상 그래프와 거리 비교이며 ArcGIS의 이동시간·일방통행·회전제약을 모두 재현한 결과가 아니다.
